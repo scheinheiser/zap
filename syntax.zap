@@ -1,0 +1,77 @@
+% this is a comment.
+
+%{
+  this is
+  a multiline
+  comment
+%}
+
+% zap has module-based system.
+@module SyntaxDemo
+
+@import Std without (filter, map)
+@import Data.List with (filter, map)
+
+dec filter : ('a -> bool) -> ['a] -> ['a]
+def filter _ [] := [];
+def filter p (x :: xs) :=
+  if p x
+  then x :: filter p xs
+  else filter p xs
+;;
+
+% pattern guards
+dec compressed_filter : ('a -> bool) -> ['a] -> ['a]
+def compressed_filter _ [] := [];
+def compressed_filter p (x :: xs) : when (p x) = x :: filter p xs;
+def compressed_filter p (_ :: xs) := filter p xs
+;;
+
+% block pattern guards
+dec clampNums : [int] -> [int]
+def clampNums [] := [];
+def clampNums (x :: xs)
+  : when {
+    x < 10 && x > 0
+  } = x :: clampNums xs;
+def clampNums (_ :: xs) := clampNums xs
+;;
+
+dec getLast : ['a] -> 'a
+def getLast [] := fail "empty list";
+def getLast [x] := x;
+def getLast (_ :: xs) := getLast xs
+;;
+
+% eta reduction
+dec map : ('a -> 'b) -> ['a] -> ['b]
+def map := go
+  with
+    % you can omit the dec for functions/variables in with-blocks
+    def go _ [] := []
+    def go f (x :: xs) := (f x) :: (go f xs)
+;;
+
+dec sayHello : string -> ()
+def sayHello name :=
+  %{
+    you can explicitly declare the type, or allow it to be inferred - this would also be valid:
+    let greeted := "hello" <> name in
+  %}
+  let greeted : string = "hello" <> name in
+  print greeted
+;;
+
+% partial application
+dec addOne : int -> int
+def addOne := (+) 1
+;;
+
+% atoms
+dec okOrNot : bool -> atom
+def okOrNot true := @ok;
+def okOrNot false := @fail
+;;
+
+dec main : ()
+def main := print "hello world!"

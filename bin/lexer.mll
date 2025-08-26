@@ -68,7 +68,7 @@ rule tokenize = parse
   | ';'         {SEMI}
   | ";;"        {SEMISEMI}
   | '='         {EQUALS}
-  | ":="        {DEF_EQUALS}
+  | ":="        {ASSIGNMENT}
   | ','         {COMMA}
   | ident as i
     {match (List.assoc_opt i keywords) with

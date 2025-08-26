@@ -20,7 +20,7 @@
 %token LBRACE RBRACE LPAREN RPAREN LBRACK RBRACK
 %token SEMI SEMISEMI COLON COLONCOLON
 %token FUNCTION_ARROW
-%token EQUALS DEF_EQUALS
+%token EQUALS ASSIGNMENT
 %token ATSIGN DOT COMMA
 %token EOF
 
@@ -31,9 +31,12 @@ program:
   | mod = MODULE; defs = list(toplvl_defs); EOF {(mod, defs)} ;
 
 toplvl_defs:
-  | ATSIGN IMPORT {import_statement}
-  | DEC i = IDENT COLON typs = dec_sig {Ast.TDef @@ Ast.Dec (i, typs)}
-  | DEF i = IDENT args = list(IDENT) DEF_EQUALS body = terms SEMISEMI {}
+  | ATSIGN IMPORT 
+    {import_statement}
+  | DEC 
+    {dec_sig}
+  | DEF 
+    {def_statement}
 
 import_statement:
   | i = IDENT WITHOUT excludes = conditional_imports 
@@ -48,8 +51,41 @@ conditional_imports:
   | cs = delimited(LPAREN, separated_list(COMMA, IDENT), RPAREN) {cs} ;
 
 dec_sig:
-  | t = typ {[t]}
-  | ts = separated_list(FUNCTION_ARROW, typ) {ts} ;
+  | i = IDENT COLON t = typ {Ast.TDef @@ Ast.Dec (i, [t])}
+  | i = IDENT COLON ts = separated_list(FUNCTION_ARROW, typ) {Ast.TDef @@ Ast.Dec (i, ts)} ;
+
+def_statement:
+  | i = IDENT args = list(IDENT) COLON cond = when_block EQUALS body = nonempty_list(term) WITH local_defs = flatten(list(with_block)) 
+    {Ast.TDef @@ Ast.Def (i, args, (Some cond), body, (Some local_defs))}
+  | i = IDENT args = list(IDENT) COLON cond = when_block EQUALS body = nonempty_list(term) SEMISEMI 
+    {Ast.TDef @@ Ast.Def (i, args, (Some cond), body, None)}
+  | i = IDENT args = list(IDENT) ASSIGNMENT body = nonempty_list(term) WITH local_defs = flatten(list(with_block)) 
+    {Ast.TDef @@ Ast.Def (i, args, None, body, (Some with_block))}
+  | i = IDENT args = list(IDENT) ASSIGNMENT body = nonempty_list(term) SEMISEMI 
+    {Ast.TDef @@ Ast.Def (i, args, None, body, None)} ; 
+
+when_block:
+  | WHEN LBRACE cond = nonempty_list(term) RBRACE {cond}
+  | WHEN cond = term {cond} ;
+
+with_block:
+  | DEC dsig=dec_sig DEF def=def_statement {[dsig, def]}
+  | DEF def=def_statement {[def]} ;
+
+term:
+  | LET i = IDENT COLON t = typ EQUALS v = term {Ast.TLet (i, (Some t), v)}
+  | LET i = IDENT ASSIGNMENT v = term {Ast.TLet (i, None, v)}
+  | body = delimited(LBRACE, nonempty_list(term), RBRACE) {Ast.TGrouping body}
+  | lit' = lit {Ast.TLit lit'}
+
+lit:
+  | i = INT {Ast.Int i}
+  | f = FLOAT {Ast.Float f}
+  | c = CHAR {Ast.Char c}
+  | s = STRING {Ast.String s}
+  | b = BOOL {Ast.Bool b}
+  | ATSIGN i = IDENT {Ast.Atom i}
+  | UNIT {Ast.Unit} ;
 
 typ:
   | t = TY_PRIM 

@@ -35,8 +35,12 @@ type const =
 
 type term =
   | TLit      of const
-  | TLet      of ty * ident * term
-  | TAp       of func * term list
+  | TLet      of ident * ty option * term
+  | TGrouping of term list
+  | TAp       of func_ap
+and func_ap =
+  | Prefix of func * term list
+  | Infix of term * func * term
 
 (* for both, they can have functions and types *)
 type import_cond =

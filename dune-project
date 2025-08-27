@@ -5,11 +5,11 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github scheinheiser/zap))
 
-(authors "Author Name <author@example.com>")
+(authors "scheinheiser")
 
-(maintainers "Maintainer Name <maintainer@example.com>")
+(maintainers "scheinheiser")
 
 (license LICENSE)
 

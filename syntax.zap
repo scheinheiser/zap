@@ -48,8 +48,9 @@ dec map : ('a -> 'b) -> ['a] -> ['b].
 def map := go
   with
     % you can omit the dec for functions/variables in with-blocks
-    def go _ [] := []
+    def go _ [] := [];
     def go f (x :: xs) := (f x) :: (go f xs)
+    ;;
 ;;
 
 dec sayHello : string -> ().

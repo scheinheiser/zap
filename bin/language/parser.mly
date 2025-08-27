@@ -1,6 +1,6 @@
 %token <int> INT
 %token <float> FLOAT
-%token <string> STRING ATOM
+%token <string> STRING
 %token <char> CHAR
 %token <bool> BOOL
 %token UNIT
@@ -21,9 +21,8 @@
 
 %token LBRACE RBRACE LPAREN RPAREN LBRACK RBRACK
 %token SEMI SEMISEMI COLON
-%token ARROW
-%token EQ ASSIGNMENT
-%token ATSIGN DOT COMMA BTICK
+%token EQ ASSIGNMENT ARROW
+%token ATSIGN DOT COMMA BTICK WILDCARD
 %token EOF
 
 %start <Ast.program> program
@@ -36,7 +35,7 @@ program:
   | ATSIGN MODULE i = UPPER_IDENT {i} ;
 
 toplvl_defs:
-  | ATSIGN imp = import_statement
+  | ATSIGN IMPORT imp = import_statement
     {Ast.TImport imp}
   | DEC d = dec_sig | DEF d = def_statement
     {Ast.TDef d} ;
@@ -53,19 +52,24 @@ conditional_imports:
   | i = IDENT {[i]}
   | cs = delimited(LPAREN, separated_list(COMMA, IDENT), RPAREN) {cs} ;
 
-dec_sig:
-  | i = IDENT COLON t = typ DOT {Ast.Dec (i, [t])}
-  | i = IDENT COLON ts = separated_list(ARROW, typ) DOT {Ast.Dec (i, ts)} ;
+%inline dec_sig:
+  | i = IDENT COLON t = nonempty_list(typ) DOT {Ast.Dec (i, t)}
 
 def_statement:
-  | i = IDENT args = list(IDENT) COLON WHEN cond = term EQ body = nonempty_list(term) WITH local_defs = flatten(list(with_block)) SEMISEMI
+  | i = IDENT args = list(func_arg) COLON WHEN cond = term EQ body = nonempty_list(term) WITH local_defs = flatten(list(with_block)) SEMISEMI
     {Ast.Def (i, args, (Some cond), body, (Some local_defs))}
-  | i = IDENT args = list(IDENT) COLON WHEN cond = term EQ body = nonempty_list(term) SEMISEMI 
+  | i = IDENT args = list(func_arg) COLON WHEN cond = term EQ body = nonempty_list(term) SEMISEMI 
     {Ast.Def (i, args, (Some cond), body, None)}
-  | i = IDENT args = list(IDENT) ASSIGNMENT body = nonempty_list(term) WITH local_defs = flatten(list(with_block)) SEMISEMI
+  | i = IDENT args = list(func_arg) ASSIGNMENT body = nonempty_list(term) WITH local_defs = flatten(list(with_block)) SEMISEMI
     {Ast.Def (i, args, None, body, (Some local_defs))}
-  | i = IDENT args = list(IDENT) ASSIGNMENT body = nonempty_list(term) SEMISEMI 
+  | i = IDENT args = list(func_arg) ASSIGNMENT body = nonempty_list(term) SEMISEMI 
     {Ast.Def (i, args, None, body, None)} ; 
+
+func_arg:
+  | i = IDENT {Ast.ArgIdent i}
+  | l = lit   {Ast.ArgMatch (Ast.MLit l)}
+  | WILDCARD  {Ast.ArgMatch Ast.MWild}
+  | LPAREN l = func_arg CONS r = func_arg RPAREN {Ast.ArgMatch (Ast.MCons (l, r))}
 
 with_block:
   | DEC dsig=dec_sig DEF def=def_statement {[dsig; def]}
@@ -82,10 +86,12 @@ term:
     {Ast.TIf (cond, tbranch, Some fbranch)}
   | IF cond = term THEN tbranch = term
     {Ast.TIf (cond, tbranch, None)}
-  | i = prefix_ident args = list(arg) 
+  | i = prefix_ident args = list(ap_arg)
     {Ast.TAp (Ast.Prefix (i, args))}
-  | l = arg i = infix_ident r = arg 
+  | l = ap_arg i = infix_ident r = ap_arg
     {Ast.TAp (Ast.Infix (l, i, r))}
+  | LBRACK items = separated_list(SEMI, list_item) RBRACK
+    {Ast.TList items}
   | l = lit 
     {Ast.TLit l} ;
 
@@ -97,15 +103,19 @@ infix_ident:
   | BTICK i = IDENT BTICK {i}
   | o = op {o} ;
 
-arg:
+ap_arg:
   | l = lit 
     {Ast.ALit l}
   | i = IDENT 
     {Ast.AIdent i}
-  | i = prefix_ident  args = list(arg)
+  | i = prefix_ident args = list(ap_arg)
     {Ast.AAp (Ast.Prefix (i, args))}
-  | l = arg i = infix_ident r = arg
+  | l = ap_arg i = infix_ident r = ap_arg
     {Ast.AAp (Ast.Infix (l, i, r))} ;
+
+%inline list_item:
+  | l = lit   {Ast.LConst l}
+  | i = IDENT {Ast.LIdent i}
 
 %inline op:
   | o = OP 
@@ -161,4 +171,6 @@ typ:
   | LBRACK t = typ RBRACK
     {Ast.List t}
   | LPAREN ts = separated_nonempty_list(COMMA, typ) RPAREN 
-    {Ast.Tuple ts} ;
+    {Ast.Tuple ts}
+  | l = typ ARROW r = typ
+    {Ast.Arrow (l, r)} ;

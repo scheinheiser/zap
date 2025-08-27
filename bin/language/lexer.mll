@@ -33,7 +33,6 @@
     ("char", TY_PRIM Ast.PChar);
     ("string", TY_PRIM Ast.PString);
     ("bool", TY_PRIM Ast.PBool);
-    ("()", TY_PRIM Ast.PUnit);
     ("with", WITH);
     ("without", WITHOUT);
     ("true", BOOL true);
@@ -71,7 +70,7 @@ let symbol = ['-' '+' '*' '\\' '&' '(' ')' '{' '}' '=' '|' '@' '>' '<' '%' '$' '
 let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':']
 
 let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']+ | symbol+
-let ident = ['a'-'z' 'A'-'Z'] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
+let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
 let whitespace = [' ' '\t']+
 let newline = '\n' | '\r' | "\r\n"
 
@@ -81,9 +80,9 @@ rule tokenize = parse
   | int as i    {INT (int_of_string i)}
   | float as f  {FLOAT (float_of_string f)}
   | '\"' str as s '\"' {STRING s}
-  | '\''        {tokenize_char lexbuf}
   | '{'         {LBRACE}
   | '}'         {RBRACE}
+  | "()"        {TY_PRIM Ast.PUnit}
   | '('         {LPAREN}
   | ')'         {RPAREN}
   | '['         {LBRACK}
@@ -96,7 +95,8 @@ rule tokenize = parse
   | ';'         {SEMI}
   | ";;"        {SEMISEMI}
   | ','         {COMMA}
-  | op* as op'
+  | '_'         {WILDCARD}
+  | op+ as op'
     {match (List.assoc_opt op' builtin_op) with
       | (Some op'') -> op''
       | None -> OP op'}
@@ -106,6 +106,7 @@ rule tokenize = parse
       | None when is_generic i -> TY_PRIM (Ast.PGeneric i)
       | None when is_upper i   -> UPPER_IDENT i
       | None                   -> IDENT i}
+  | '\''        {tokenize_char lexbuf}
   | eof         {EOF}
 and tokenize_char = parse
   | '\\' {tokenize_control lexbuf}

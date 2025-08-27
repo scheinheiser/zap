@@ -1,6 +1,6 @@
 (library
  (name language)
- (libraries error))
+ (libraries error pretty))
 
 (ocamllex lexer)
 

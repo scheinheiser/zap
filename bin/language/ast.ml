@@ -33,16 +33,21 @@ type const =
   | Atom of ident
   | Unit
 
-type term =
-  | TLit      of const
-  | TLet      of ident * ty option * term
-  | TGrouping of term list
-  | TAp       of func_ap
-and func_ap =
-  | Prefix of func * term list
-  | Infix of term * func * term
+type func_ap =
+  | Prefix of func * func_arg list
+  | Infix of func_arg * func * func_arg
+and func_arg =
+  | ALit of const
+  | AIdent of ident
+  | AAp of func_ap
 
-(* for both, they can have functions and types *)
+type term =
+  | TLit of const
+  | TLet of ident * ty option * term
+  | TGrouping of term list
+  | TAp of func_ap
+  | TIf of term * term * term option
+
 type import_cond =
   | CWith of ident list
   | CWithout of ident list
@@ -51,8 +56,8 @@ type import = module_name * import_cond option
 
 type definition =
   | Dec of func * ty list
-  | Def of func * arg list * (term list) option * term list * with_block option
-    (* identifer, args, optional when-block, body, optional with-block *)
+  | Def of func * arg list * term option * term list * with_block option
+(* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = definition list
 
@@ -60,4 +65,4 @@ type top_lvl =
   | TDef of definition
   | TImport of import
 
-type program = module_name * (top_lvl list)
+type program = module_name * top_lvl list

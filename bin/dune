@@ -1,9 +1,4 @@
 (executable
- (public_name zap)
- (name main)
- (libraries zap))
-
-(ocamllex lexer)
-
-(menhir
- (modules parser))
+  (public_name zap)
+  (name main)
+  (libraries language))

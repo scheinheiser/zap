@@ -1,0 +1,8 @@
+(library
+ (name language)
+ (libraries error))
+
+(ocamllex lexer)
+
+(menhir
+ (modules parser))

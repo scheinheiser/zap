@@ -20,6 +20,7 @@ let parse_program s = parse' Parser.program s
 let border () =
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
   print_newline ()
+;;
 
 let () =
   let _ =

@@ -17,6 +17,10 @@ let parse' f s =
 
 let parse_program s = parse' Parser.program s
 
+let border () =
+  Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
+  print_newline ()
+
 let () =
   let _ =
     "@module Syntax\n\
@@ -28,6 +32,7 @@ let () =
   in
   let f = In_channel.(open_text "test.zap" |> input_all) in
   print_endline f;
-  let _ = parse_program f in
-  print_endline "success"
+  let res = parse_program f in
+  border ();
+  Ast.pp_program Format.std_formatter res
 ;;

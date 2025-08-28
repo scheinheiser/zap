@@ -83,6 +83,7 @@ rule tokenize = parse
   | '{'         {LBRACE}
   | '}'         {RBRACE}
   | "()"        {TY_PRIM Ast.PUnit}
+  | "[]"        {}
   | '('         {LPAREN}
   | ')'         {RPAREN}
   | '['         {LBRACK}

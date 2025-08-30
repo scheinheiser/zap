@@ -1,21 +1,6 @@
-open Lexing
+(* open Lexing *)
 open Language
-
-let column pos = pos.pos_cnum - pos.pos_bol - 1
-
-let pos_string pos =
-  let l = string_of_int pos.pos_lnum
-  and c = string_of_int (column pos + 1) in
-  "line " ^ l ^ ", column " ^ c
-;;
-
-let parse' f s =
-  let lexbuf = Lexing.from_string s in
-  try f Lexer.tokenize lexbuf with
-  | Parser.Error -> raise (Failure ("Parse error at " ^ pos_string lexbuf.lex_curr_p))
-;;
-
-let parse_program s = parse' Parser.program s
+open Parser
 
 let border () =
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
@@ -31,9 +16,12 @@ let () =
     \  num\n\
      ;;"
   in
-  let f = In_channel.(open_text "test.zap" |> input_all) in
-  print_endline f;
-  let res = parse_program f in
+  let input = "(int, [string], [(int, bool)])" in
+  (* let f = In_channel.(open_text "test.zap" |> input_all) in *)
+  print_endline input;
+  let l = Lexer.of_string input in
+  let res = Parser.parse_ty l in
   border ();
-  Ast.pp_program Format.std_formatter res
+  (* Ast.pp_program Format.std_formatter res *)
+  Ast.pp_ty Format.std_formatter res
 ;;

@@ -1,6 +1,7 @@
 {
   open Lexing
-  open Parser
+  open Util
+  open Token
 
   let next_line lexbuf =
     let pos = lexbuf.lex_curr_p in
@@ -8,6 +9,10 @@
       { pos with pos_bol = lexbuf.lex_curr_pos;
                  pos_lnum = pos.pos_lnum + 1
       }
+
+  let with_pos (l: lexbuf) (t: token) =
+    let pos = Location.of_lexbuf l in
+    pos, t
 
   let is_generic (i: string) =
     match i.[0] with
@@ -49,7 +54,6 @@
     ("/", DIV);
     ("&&", AND);
     ("||", OR);
-    ("!", NOT);
     ("=", EQ);
     ("/=", NE);
     (":=", ASSIGNMENT);
@@ -57,10 +61,6 @@
     ("->", ARROW);
     ("@", ATSIGN);
   ]
-
-  exception InvalidChar of string
-  exception InvalidEscape of string
-  exception UnterminatedComment of string
 }
 
 let int = '-'? ['0'-'9'] ['0'-'9' '_']*
@@ -69,61 +69,85 @@ let float = '-'? ['0'-'9']+ '.' ['0'-'9']
 let symbol = ['-' '+' '*' '\\' '&' '(' ')' '{' '}' '=' '|' '@' '>' '<' '%' '$' '^' '#' '!' ';' ':' '?']
 let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':']
 
-let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']+ | symbol+
-let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
-let whitespace = [' ' '\t']+
 let newline = '\n' | '\r' | "\r\n"
+let whitespace = [' ' '\t']+
+let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']+ | symbol+ | newline+
+let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
 
-rule tokenize = parse
-  | whitespace  {tokenize lexbuf}
-  | newline     {next_line lexbuf; tokenize lexbuf}
-  | int as i    {INT (int_of_string i)}
-  | float as f  {FLOAT (float_of_string f)}
-  | '\"' str as s '\"' {STRING s}
-  | '{'         {LBRACE}
-  | '}'         {RBRACE}
-  | "()"        {TY_PRIM Ast.PUnit}
-  | '('         {LPAREN}
-  | ')'         {RPAREN}
-  | '['         {LBRACK}
-  | ']'         {RBRACK}
+rule token = parse
+  | whitespace  {token lexbuf}
+  | newline     {next_line lexbuf; token lexbuf}
+  | int as i    {with_pos lexbuf (INT (int_of_string i))}
+  | float as f  {with_pos lexbuf (FLOAT (float_of_string f))}
+  | '\"' str as s '\"' {with_pos lexbuf (STRING s)}
+  | '{'         {with_pos lexbuf LBRACE}
+  | '}'         {with_pos lexbuf RBRACE}
+  | "()"        {with_pos lexbuf (TY_PRIM Ast.PUnit)}
+  | '('         {with_pos lexbuf LPAREN}
+  | ')'         {with_pos lexbuf RPAREN}
+  | '['         {with_pos lexbuf LBRACK}
+  | ']'         {with_pos lexbuf RBRACK}
   | '%'         {skip_comment lexbuf}
-  | "%{"        {skip_multiline_comment lexbuf}
-  | '.'         {DOT}
-  | '`'         {BTICK}
-  | ':'         {COLON}
-  | ';'         {SEMI}
-  | ";;"        {SEMISEMI}
-  | ','         {COMMA}
-  | '_'         {WILDCARD}
+  | "%{"        {skip_multiline_comment 0 lexbuf}
+  | '.'         {with_pos lexbuf DOT}
+  | '`'         {with_pos lexbuf BTICK}
+  | ':'         {with_pos lexbuf COLON}
+  | ';'         {with_pos lexbuf SEMI}
+  | ";;"        {with_pos lexbuf SEMISEMI}
+  | ','         {with_pos lexbuf COMMA}
+  | '_'         {with_pos lexbuf WILDCARD}
   | op+ as op'
-    {match (List.assoc_opt op' builtin_op) with
-      | (Some op'') -> op''
-      | None -> OP op'}
+    {
+    let tok = match (List.assoc_opt op' builtin_op) with
+              | (Some op'') -> op''
+              | None -> OP op'
+    in with_pos lexbuf tok}
   | ident as i
-    {match (List.assoc_opt i keywords) with
-      | (Some t) -> t
-      | None when is_generic i -> TY_PRIM (Ast.PGeneric i)
-      | None when is_upper i   -> UPPER_IDENT i
-      | None                   -> IDENT i}
+    {let tok = match (List.assoc_opt i keywords) with
+                | (Some t) -> t
+                | None when is_generic i -> TY_PRIM (Ast.PGeneric i)
+                | None when is_upper i   -> UPPER_IDENT i
+                | None                   -> IDENT i
+      in with_pos lexbuf tok}
   | '\''        {tokenize_char lexbuf}
-  | eof         {EOF}
+  | eof         {with_pos lexbuf EOF}
+  | _ as c      {
+    let msg = Printf.sprintf "Unrecognised character: %c" c in
+    let err = (Some (Location.of_lexbuf lexbuf), msg) in
+    Error.report_err err
+  }
 and tokenize_char = parse
   | '\\' {tokenize_control lexbuf}
-  | ((['a'-'z' 'A'-'Z' '0'-'9' '_'] | symbol) as c) '\'' {CHAR c}
-  | _ as c {raise (InvalidChar ("Invalid character: '" ^ (Char.escaped c) ^ "'.\n"))}
+  | ((['a'-'z' 'A'-'Z' '0'-'9' '_'] | symbol) as c) '\'' {with_pos lexbuf (CHAR c)}
+  | _ as c {
+    let msg = Printf.sprintf "Invalid char: %c" c in
+    let err = (Some (Location.of_lexbuf lexbuf), msg) in
+    Error.report_err err
+  }
 and tokenize_control = parse
-  | 'n' '\'' {CHAR '\n'}
-  | 't' '\'' {CHAR '\t'}
-  | 'b' '\'' {CHAR '\b'}
-  | 'r' '\'' {CHAR '\r'}
-  | '\\' '\'' {CHAR '\\'}
-  | _ as c {raise (InvalidEscape ("Invalid escape sequence: '\\" ^ (Char.escaped c) ^ "'\n"))}
+  | 'n' '\'' {with_pos lexbuf (CHAR '\n')}
+  | 't' '\'' {with_pos lexbuf (CHAR '\t')}
+  | 'b' '\'' {with_pos lexbuf (CHAR '\b')}
+  | 'r' '\'' {with_pos lexbuf (CHAR '\r')}
+  | '\\' '\'' {with_pos lexbuf (CHAR '\\')}
+  | _ as c {
+    let msg = Printf.sprintf "Invalid escape sequence: %c" c in
+    let err = (Some (Location.of_lexbuf lexbuf), msg) in
+    Error.report_err err
+  }
 and skip_comment = parse
-  | '\n' {tokenize lexbuf}
-  | _    {skip_comment lexbuf}
-  | eof  {raise (UnterminatedComment "Unterminated comment.")}
-and skip_multiline_comment = parse
-  | "%}" {tokenize lexbuf}
-  | _    {skip_multiline_comment lexbuf}
-  | eof  {raise (UnterminatedComment "Unterminated comment.")}
+  | newline {next_line lexbuf; token lexbuf}
+  | _       {skip_comment lexbuf}
+  | eof     {
+    let err = (Some (Location.of_lexbuf lexbuf), "Unterminated comment.") in
+    Error.report_err err
+  }
+and skip_multiline_comment nesting = parse
+  | "%{"    {skip_multiline_comment (nesting + 1) lexbuf}
+  | "%}"    {if nesting = 0 then (token lexbuf) else (skip_multiline_comment (nesting - 1) lexbuf)}
+  | newline {next_line lexbuf; skip_multiline_comment nesting lexbuf}
+  | _       {skip_multiline_comment nesting lexbuf}
+  | eof     {
+    let err = (Some (Location.of_lexbuf lexbuf), "Unterminated comment.") in
+    Error.report_err err
+  }

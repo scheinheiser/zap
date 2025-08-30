@@ -202,13 +202,13 @@ let pp_import_cond out (cond : import_cond) =
   | CWith includes ->
     Format.fprintf
       out
-      "with @[<hov>%a@]"
+      "with (@[<hov>%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
       includes
   | CWithout excludes ->
     Format.fprintf
       out
-      "without @[<hov>%a@]"
+      "without (@[<hov>%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
       excludes
 ;;

@@ -171,7 +171,10 @@ module Parser = struct
          let next = parse_ty l in
          Ast.Arrow (Ast.Tuple contents, next)
        | _ -> Ast.Tuple contents)
-    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Unexpected token while parsing type: %s" (Token.show tok))
+    | pos, tok ->
+      Error.report_err
+        ( Some pos
+        , Printf.sprintf "Unexpected token while parsing type: %s" (Token.show tok) )
   ;;
 
   let parse_module (l : Lexer.t) : Ast.module_name =

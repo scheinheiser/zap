@@ -66,8 +66,9 @@ let show_prim = function
   | Ast.PAtom -> "atom"
   | Ast.PUnit -> "()"
   | Ast.PGeneric n -> n
+;;
 
-let show (t: token): string = 
+let show (t : token) : string =
   let open Printf in
   match t with
   | INT i -> sprintf "INT %d" i
@@ -123,3 +124,4 @@ let show (t: token): string =
   | BTICK -> sprintf "BTICK"
   | WILDCARD -> sprintf "WILDCARD"
   | EOF -> sprintf "EOF"
+;;

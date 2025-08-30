@@ -16,7 +16,7 @@ let () =
     \  num\n\
      ;;"
   in
-  let input = "(int, [string], [(int, bool)])" in
+  let input = "int -> (int, string, [bool]) -> atom" in
   (* let f = In_channel.(open_text "test.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in

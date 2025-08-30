@@ -16,7 +16,8 @@ let pp_location out (loc : t) =
     if start_line = end_line
     then Printf.sprintf "%d" start_line
     else Printf.sprintf "%d-%d" start_line end_line
-  in Format.fprintf out "%s; %s:%d-%d" filename line start_col end_col
+  in
+  Format.fprintf out "%s; %s:%d-%d" filename line start_col end_col
 ;;
 
 let of_lexbuf (lexbuf : Lexing.lexbuf) : t =

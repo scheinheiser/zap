@@ -1,5 +1,7 @@
 open Util
 
+(* made using https://github.com/contificate/summary and https://www.youtube.com/watch?v=2l1Si4gSb9A as references *)
+
 (* utils *)
 let rec any (l : 'a list) (p : 'a -> bool) : bool =
   match l with
@@ -41,6 +43,22 @@ module Lexer = struct
     next
   ;;
 
+  let skip (tokens : t) ~am:(n : int) =
+    if n < 0
+    then
+      raise
+        (Failure
+           "Internal error: called Language.Parser.Lexer.skip with a negative amount.")
+    else (
+      let rec aux t =
+        if t <> 0
+        then (
+          let _ = advance tokens in
+          aux (t - 1))
+      in
+      aux n)
+  ;;
+
   let matches (tokens : t) (tok : Token.token) : bool =
     let _, next = peek tokens in
     next = tok
@@ -50,11 +68,10 @@ module Lexer = struct
     let rec aux acc =
       let v = p tokens in
       if matches tokens sep
-      then
-        (let _ = advance tokens in
+      then (
+        let _ = advance tokens in
         v :: acc |> aux)
-      else 
-        v :: acc
+      else v :: acc
     in
     List.rev @@ aux []
   ;;
@@ -131,16 +148,30 @@ module Parser = struct
 
   let rec parse_ty (l : Lexer.t) : Ast.ty =
     match Lexer.advance l with
-    | _, TY_PRIM t -> Ast.Prim t
+    | _, TY_PRIM t when snd (Lexer.peek l) <> ARROW -> Ast.Prim t
+    | _, TY_PRIM t ->
+      Lexer.skip l ~am:1;
+      let next = parse_ty l in
+      Ast.Arrow (Ast.Prim t, next)
     | _, LBRACK ->
       let ty = parse_ty l in
       Lexer.consume l RBRACK "Expecting ']' to end list.";
-      Ast.List ty
+      (match snd (Lexer.peek l) with
+       | ARROW ->
+         Lexer.skip l ~am:1;
+         let next = parse_ty l in
+         Ast.Arrow (Ast.List ty, next)
+       | _ -> Ast.List ty)
     | _, LPAREN ->
       let contents = Lexer.match_separated_list l COMMA parse_ty in
       Lexer.consume l RPAREN "Expecting ')' to end tuple.";
-      Ast.Tuple contents
-    | _ -> Ast.Prim (Ast.PGeneric "BRUH")
+      (match snd (Lexer.peek l) with
+       | ARROW ->
+         Lexer.skip l ~am:1;
+         let next = parse_ty l in
+         Ast.Arrow (Ast.Tuple contents, next)
+       | _ -> Ast.Tuple contents)
+    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Unexpected token while parsing type: %s" (Token.show tok))
   ;;
 
   let parse_module (l : Lexer.t) : Ast.module_name =

@@ -38,6 +38,7 @@
     ("char", TY_PRIM Ast.PChar);
     ("string", TY_PRIM Ast.PString);
     ("bool", TY_PRIM Ast.PBool);
+    ("atom", TY_PRIM Ast.PAtom);
     ("with", WITH);
     ("without", WITHOUT);
     ("true", BOOL true);

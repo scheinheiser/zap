@@ -31,7 +31,7 @@ type const =
   | Unit
 
 type func_ap =
-  | Prefix of func * ap_arg list
+  | Postfix of func * ap_arg list
   | Infix of ap_arg * func * ap_arg
 
 and ap_arg =
@@ -131,7 +131,7 @@ let pp_const out (c : const) =
 
 let rec pp_func_ap out (ap : func_ap) =
   match ap with
-  | Prefix (f, args) ->
+  | Postfix (f, args) ->
     Format.fprintf
       out
       "(@[<hov>%s@ %a@])"

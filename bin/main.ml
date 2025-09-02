@@ -14,13 +14,12 @@ let () =
     \  num\n\
      ;;"
   in
-  (* let input = "a + b + c + d" in *)
-  let input = "a + b + c + d + e" in
+  let input = "[a; 100; (5 + (6 * 9))]" in
   (* let f = In_channel.(open_text "test.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in
-  let res = Parser.parse_infix l in
+  let res = Parser.parse_expr l 0 in
   border ();
   (* Ast.pp_program Format.std_formatter res *)
-  Ast.pp_func_ap Format.std_formatter res
+  Ast.pp_expr Format.std_formatter res
 ;;

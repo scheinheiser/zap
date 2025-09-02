@@ -6,7 +6,7 @@
   comment
 %}
 
-% zap has module-based system.
+% zap uses modules.
 @module SyntaxDemo
 
 @import Std without (filter, map)

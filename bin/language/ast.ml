@@ -21,7 +21,7 @@ type ty =
   | Tuple of ty list
   | Prim of prim
 
-type const =
+type expr =
   | Int of int
   | Float of float
   | String of string
@@ -29,28 +29,17 @@ type const =
   | Bool of bool
   | Atom of ident
   | Unit
-
-type func_ap =
-  | Postfix of func * ap_arg list
-  | Infix of ap_arg * func * ap_arg
-
-and ap_arg =
-  | ALit of const
-  | AIdent of ident
-  | AAp of func_ap
-
-type item =
-  | LConst of const
-  | LIdent of ident
+  | EList of expr list
+  | Ident of ident
+  | Bop of expr * ident * expr
+  | Ap of ident * expr list
 
 type term =
-  | TLit of const
+  | TExpr of expr
   | TLet of ident * ty option * term
   | TGrouping of term list
-  | TAp of func_ap
-  | TIf of term * term * term option
-  | TList of item list
-  | TTup of item list
+  | TIf of expr * term * term option
+  | TTup of expr list
 
 type import_cond =
   | CWith of ident list
@@ -58,19 +47,15 @@ type import_cond =
 
 type import = module_name * import_cond option
 
-type def_arg =
-  | ArgIdent of ident
-  | ArgMatch of match_arg
-
-and match_arg =
-  | MWild (* wildcard, '_' *)
-  | MLit of const
-  | MCons of def_arg * def_arg
-  | MList (* [] *)
+type pattern =
+  | PIdent of ident
+  | PWild (* wildcard, '_' *)
+  | PCons of pattern * pattern
+  | PList (* specifically [] *)
 
 type definition =
   | Dec of func * ty list
-  | Def of func * def_arg list * term option * term list * with_block option
+  | Def of func * pattern list * term option * term list * with_block option
 (* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = definition list
@@ -118,8 +103,9 @@ let rec pp_ty out (ty' : ty) =
   | Prim p -> pp_prim out p
 ;;
 
-let pp_const out (c : const) =
-  match c with
+let rec pp_expr out (e: expr) =
+  match e with 
+  | Ident i -> pp_ident out i
   | Int i -> Format.fprintf out "%d" i
   | Float f -> Format.fprintf out "%.5f" f
   | String s -> Format.fprintf out "%s\"" s
@@ -127,48 +113,30 @@ let pp_const out (c : const) =
   | Bool b -> Format.fprintf out "%b" b
   | Atom a -> Format.fprintf out "%@%s" a
   | Unit -> Format.fprintf out "()"
-;;
-
-let rec pp_func_ap out (ap : func_ap) =
-  match ap with
-  | Postfix (f, args) ->
+  | EList l ->
+    Format.fprintf
+      out
+      "[@[<hov>%a@]]"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
+      l
+  | Ap (f, args) ->
     Format.fprintf
       out
       "(@[<hov>%s@ %a@])"
       f
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_ap_arg)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
       args
-  | Infix (l, f, r) ->
-    Format.fprintf out "(@[<hov>%s@ %a@ %a@])" f pp_ap_arg l pp_ap_arg r
-
-and pp_ap_arg out (arg : ap_arg) =
-  match arg with
-  | ALit l -> pp_const out l
-  | AIdent i -> pp_ident out i
-  | AAp ap -> pp_func_ap out ap
-;;
-
-let pp_item out (item : item) =
-  match item with
-  | LConst c -> pp_const out c
-  | LIdent i -> pp_ident out i
-;;
+  | Bop (l, op, r) ->
+    Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
 
 let rec pp_term out (t : term) =
   match t with
-  | TLit c -> pp_const out c
-  | TAp ap -> pp_func_ap out ap
-  | TList l ->
-    Format.fprintf
-      out
-      "[@[<hov>%a@]]"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_item)
-      l
+  | TExpr e -> pp_expr out e
   | TTup t ->
     Format.fprintf
       out
       "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_item)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_expr)
       t
   | TLet (i, ty, v) ->
     Format.fprintf
@@ -189,10 +157,8 @@ let rec pp_term out (t : term) =
     Format.fprintf
       out
       "(if @[<v>%a@,%a@,%a@])"
-      pp_term
-      cond
-      pp_term
-      tbranch
+      pp_expr cond
+      pp_term tbranch
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_term)
       fbranch
 ;;
@@ -222,17 +188,12 @@ let pp_import out ((mod_name, cond) : import) =
     cond
 ;;
 
-let rec pp_def_arg out (arg : def_arg) =
+let rec pp_pattern out (arg : pattern) =
   match arg with
-  | ArgIdent i -> pp_ident out i
-  | ArgMatch m_arg -> pp_match_arg out m_arg
-
-and pp_match_arg out (arg : match_arg) =
-  match arg with
-  | MWild -> Format.fprintf out "_"
-  | MList -> Format.fprintf out "[]"
-  | MLit lit -> pp_const out lit
-  | MCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_def_arg l pp_def_arg r
+  | PIdent i -> pp_ident out i
+  | PWild -> Format.fprintf out "_"
+  | PList -> Format.fprintf out "[]"
+  | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
 ;;
 
 let pp_when_block out (when_block : term option) =
@@ -260,7 +221,7 @@ let rec pp_definition out (def : definition) =
       out
       "(de@[<v>f %s (%a)@,%a@,%a@,%a@])"
       f
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_def_arg)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern)
       args
       pp_when_block
       when_block

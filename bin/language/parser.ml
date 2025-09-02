@@ -76,6 +76,18 @@ module Lexer = struct
     List.rev @@ aux []
   ;;
 
+  let match_list (tokens : t) (fin: Token.token) (p : t -> 'a) : 'a list =
+    let rec aux acc =
+      let v = p tokens in
+      if not (matches tokens fin)
+      then (
+        let _ = advance tokens in
+        v :: acc |> aux)
+      else v :: acc
+    in
+    List.rev @@ aux []
+  ;;
+
   let match_with_either
         (tokens : t)
         (p1 : t -> 'a option)
@@ -123,6 +135,7 @@ module Parser = struct
 
   let get_bp (t : Token.token) : int =
     match t with
+    | LPAREN | RPAREN -> 0
     | NE | EQ -> 2
     | LT | GT | LTE | GTE -> 3
     | PLUS | MINUS -> 4
@@ -160,110 +173,101 @@ module Parser = struct
       "Expected a primitive type."
   ;;
 
-  let parse_const (l : Lexer.t) : Ast.const =
-    Lexer.consume_with
-      l
-      (function
-        | INT i -> Some (Ast.Int i)
-        | FLOAT f -> Some (Ast.Float f)
-        | CHAR c -> Some (Ast.Char c)
-        | STRING s -> Some (Ast.String s)
-        | BOOL b -> Some (Ast.Bool b)
-        | UNIT -> Some Ast.Unit
-        | ATSIGN -> Some (Ast.Atom (parse_ident l))
-        | _ -> None)
-      "Expected a constant."
-  ;;
-
   let rec parse_ty (l : Lexer.t) : Ast.ty =
     match Lexer.advance l with
-    | _, TY_PRIM t when snd (Lexer.peek l) <> ARROW -> Ast.Prim t
-    | _, TY_PRIM t ->
-      Lexer.skip l ~am:1;
-      let next = parse_ty l in
-      Ast.Arrow (Ast.Prim t, next)
+    | _, TY_PRIM t -> parse_arrow l (Ast.Prim t)
     | _, LBRACK ->
       let ty = parse_ty l in
       Lexer.consume l RBRACK "Expected ']' to end list.";
-      (match snd (Lexer.peek l) with
-       | ARROW ->
-         Lexer.skip l ~am:1;
-         let next = parse_ty l in
-         Ast.Arrow (Ast.List ty, next)
-       | _ -> Ast.List ty)
+      parse_arrow l (Ast.List ty)
     | _, LPAREN ->
       let contents = Lexer.match_separated_list l COMMA parse_ty in
       Lexer.consume l RPAREN "Expected ')' to end tuple.";
-      (match snd (Lexer.peek l) with
-       | ARROW ->
-         Lexer.skip l ~am:1;
-         let next = parse_ty l in
-         Ast.Arrow (Ast.Tuple contents, next)
-       | _ -> Ast.Tuple contents)
+      parse_arrow l (Ast.Tuple contents)
     | pos, tok ->
       Error.report_err
         ( Some pos
         , Printf.sprintf "Unexpected token while parsing type: %s" (Token.show tok) )
+  and parse_arrow (l: Lexer.t) (left: Ast.ty) =
+    match snd (Lexer.peek l) with
+     | ARROW ->
+       Lexer.skip l ~am:1;
+       let next = parse_ty l in
+       Ast.Arrow (left, next)
+     | _ -> left
+  ;;
+
+  let parse_const (l : Lexer.t) : Ast.expr =
+  Lexer.consume_with
+    l
+    (function
+      | INT i -> Some (Ast.Int i)
+      | FLOAT f -> Some (Ast.Float f)
+      | CHAR c -> Some (Ast.Char c)
+      | STRING s -> Some (Ast.String s)
+      | BOOL b -> Some (Ast.Bool b)
+      | UNIT -> Some Ast.Unit
+      | ATSIGN -> Some (Ast.Atom (parse_ident l))
+      | _ -> None)
+    "Expected a constant."
   ;;
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
-  let parse_infix (l: Lexer.t) : Ast.func_ap =
-    let rec parse_infix' lex limit = 
-      let left = nud lex in
-      Format.fprintf Format.std_formatter "left: %a@." Ast.pp_ap_arg left;
-      let lbp = Lexer.current lex |> snd |> get_bp in
-      let rec go lf =
-        Printf.printf "prec check: %d > %d\n" lbp limit;
-        if lbp > limit && snd (Lexer.current l) <> EOF
-        then
-          let _, op_tok = Lexer.advance l in
-          Printf.printf "%s: %d > %d\n" (Token.show op_tok) lbp limit;
-          go (led lex lf op_tok)
-        else
-          lf
-      in
-      go left
-    and nud (l: Lexer.t) : Ast.ap_arg =
-      Lexer.match_with_either
-        l
-        (Fun.compose (fun x -> Some (Ast.AIdent x)) parse_ident)
-        (Fun.compose (fun x -> Some (Ast.ALit x)) parse_const)
-        "Unexpected token."
-    and led (l: Lexer.t) (left: Ast.ap_arg) = function
-      | PLUS -> Ast.AAp (Ast.Infix (left, "+", (parse_infix' l 3)))
-      | MINUS -> Ast.AAp (Ast.Infix (left, "-", (parse_infix' l 4)))
-      | MUL -> Ast.AAp (Ast.Infix (left, "*", (parse_infix' l 5)))
-      | DIV -> Ast.AAp (Ast.Infix (left, "/", (parse_infix' l 5)))
-      | CONS -> Ast.AAp (Ast.Infix (left, "::", (parse_infix' l 7)))
-      | NE -> Ast.AAp (Ast.Infix (left, "/=", (parse_infix' l 2)))
-      | EQ -> Ast.AAp (Ast.Infix (left, "=", (parse_infix' l 2)))
-      | LT -> Ast.AAp (Ast.Infix (left, "<", (parse_infix' l 3)))
-      | LTE -> Ast.AAp (Ast.Infix (left, "<=", (parse_infix' l 3)))
-      | GT -> Ast.AAp (Ast.Infix (left, ">", (parse_infix' l 3)))
-      | GTE -> Ast.AAp (Ast.Infix (left, ">=", (parse_infix' l 3)))
-      | _ as op -> Error.report_err (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
-    in
+  let rec parse_expr (l: Lexer.t) (limit: int) : Ast.expr =
     let left = nud l in
-    Format.fprintf Format.std_formatter "left: %a@." Ast.pp_ap_arg left;
-    let op, p =
-      Lexer.consume_with
-        l
-        (function
-          | PLUS as op -> Some ("+", get_bp op)
-          | MINUS as op -> Some ("-", get_bp op)
-          | MUL as op -> Some ("*", get_bp op)
-          | DIV as op -> Some ("/", get_bp op)
-          | CONS as op -> Some ("::", get_bp op)
-          | NE as op -> Some ("/=", get_bp op)
-          | EQ as op -> Some ("=", get_bp op)
-          | LT as op -> Some ("<", get_bp op)
-          | LTE as op -> Some ("<=", get_bp op)
-          | GT as op -> Some (">", get_bp op)
-          | GTE as op -> Some (">=", get_bp op)
-          | _ -> None)
-      "Expecting binary operator."
-    in 
-    Ast.Infix (left, op, parse_infix' l p)
+    let lbp = Lexer.current l |> snd |> get_bp in
+    let rec go lf =
+      if lbp > limit && snd (Lexer.current l) <> EOF && snd (Lexer.current l) <> RPAREN
+      then
+        let _, op_tok = Lexer.advance l in
+        go (led l lf op_tok)
+      else
+        lf
+    in
+    go left
+  and nud (l: Lexer.t) : Ast.expr =
+    match Lexer.advance l with
+    | _, INT i -> (Ast.Int i)
+    | _, FLOAT f -> (Ast.Float f)
+    | _, CHAR c -> (Ast.Char c)
+    | _, STRING s -> (Ast.String s)
+    | _, BOOL b -> (Ast.Bool b)
+    | _, UNIT -> Ast.Unit
+    | _, ATSIGN -> (Ast.Atom (parse_ident l))
+    | _, IDENT i -> Ast.Ident i
+    | _, LBRACK ->
+  (* match_separated_list (tokens : t) (sep : Token.token) (p : t -> 'a) : 'a list = *)
+      let es = Lexer.match_separated_list l SEMI (Fun.flip parse_expr 0) in
+      Lexer.consume l RBRACK "Expected ']' to end list.";
+      Ast.EList es
+    | _, LPAREN ->
+      let e = parse_expr l 0 in
+      Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
+      e
+    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Unexpected token: %s" (Token.show tok))
+  and led (l: Lexer.t) (left: Ast.expr) = function
+    | PLUS -> Ast.Bop (left, "+", (parse_expr l 4))
+    | MINUS -> Ast.Bop (left, "-", (parse_expr l 4))
+    | MUL -> Ast.Bop (left, "*", (parse_expr l 5))
+    | DIV -> Ast.Bop (left, "/", (parse_expr l 5))
+    | CONS -> Ast.Bop (left, "::", (parse_expr l 7))
+    | NE -> Ast.Bop (left, "/=", (parse_expr l 2))
+    | EQ -> Ast.Bop (left, "=", (parse_expr l 2))
+    | LT -> Ast.Bop (left, "<", (parse_expr l 3))
+    | LTE -> Ast.Bop (left, "<=", (parse_expr l 3))
+    | GT -> Ast.Bop (left, ">", (parse_expr l 3))
+    | GTE -> Ast.Bop (left, ">=", (parse_expr l 3))
+    | op -> Error.report_err (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
+  ;;
+
+  let parse_dec (l : Lexer.t): Ast.definition =
+    Lexer.consume l DEC "Expected 'dec' keyword.";
+    let n = parse_ident l in
+    Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
+    let ts = Lexer.match_list l DOT parse_ty in
+    Lexer.consume l DOT "Expected '.' after 'dec' sig.";
+    Ast.Dec (n, ts)
+  ;;
 
   let parse_module (l : Lexer.t) : Ast.module_name =
     Lexer.consume l ATSIGN "Expected an '@' before 'module' keyword.";

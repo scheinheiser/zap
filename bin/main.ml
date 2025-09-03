@@ -14,12 +14,12 @@ let () =
     \  num\n\
      ;;"
   in
-  let input = "a * b c 10 [\"hi\"; (func_ap hi bruh)] e" in
+  let input = "let bing : int -> string = { if true then { bing } else { bap } } in" in
   (* let f = In_channel.(open_text "test.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in
-  let res = Parser.parse_expr l 0 in
+  let res = Parser.parse_term l in
   border ();
   (* Ast.pp_program Format.std_formatter res *)
-  Ast.pp_expr Format.std_formatter res
+  Ast.pp_term Format.std_formatter res
 ;;

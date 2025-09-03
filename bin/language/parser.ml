@@ -9,6 +9,11 @@ let rec any (l : 'a list) (p : 'a -> bool) : bool =
   | x :: xs -> p x || any xs p
 ;;
 
+let is_delim (t: Token.token): bool =
+  match t with
+  | EOF | RPAREN | COMMA -> true
+  | _ -> false
+
 (* main things *)
 module Lexer = struct
   type t = { mutable tokens : Token.t list }
@@ -64,7 +69,7 @@ module Lexer = struct
     next = tok
   ;;
 
-  let match_separated_list (tokens : t) (sep : Token.token) (p : t -> 'a) : 'a list =
+  let separated_list (tokens : t) (sep : Token.token) (p : t -> 'a) : 'a list =
     let rec aux acc =
       let v = p tokens in
       if matches tokens sep
@@ -76,7 +81,7 @@ module Lexer = struct
     List.rev @@ aux []
   ;;
 
-  let match_list (tokens : t) (is_end : Token.token -> bool) (p : t -> 'a) : 'a list =
+  let list_with_end (tokens : t) (is_end : Token.token -> bool) (p : t -> 'a) : 'a list =
     let rec aux acc =
       let v = p tokens in
       if current tokens |> snd |> is_end
@@ -181,7 +186,7 @@ module Parser = struct
       Lexer.consume l RBRACK "Expected ']' to end list.";
       parse_arrow l (Ast.List ty)
     | _, LPAREN ->
-      let contents = Lexer.match_separated_list l COMMA parse_ty in
+      let contents = Lexer.separated_list l COMMA parse_ty in
       Lexer.consume l RPAREN "Expected ')' to end tuple.";
       parse_arrow l (Ast.Tuple contents)
     | pos, tok ->
@@ -216,10 +221,9 @@ module Parser = struct
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
   let rec parse_expr (l : Lexer.t) (limit : int) : Ast.expr =
     let left = nud l in
-    Format.fprintf Format.std_formatter "curr: %a@." Ast.pp_expr left;
     let lbp = Lexer.current l |> snd |> get_bp in
     let rec go lf =
-      if lbp > limit && snd (Lexer.current l) <> EOF && snd (Lexer.current l) <> RPAREN
+      if lbp > limit && not (Lexer.current l |> snd |> is_delim)
       then (
         let _, op_tok = Lexer.advance l in
         go (led l lf op_tok))
@@ -238,7 +242,7 @@ module Parser = struct
     | _, ATSIGN -> Ast.Atom (parse_ident l)
     | _, IDENT i -> Ast.Ident i
     | _, LBRACK ->
-      let es = Lexer.match_separated_list l SEMI (Fun.flip parse_expr 0) in
+      let es = Lexer.separated_list l SEMI (Fun.flip parse_expr 0) in
       Lexer.consume l RBRACK "Expected ']' to end list.";
       Ast.EList es
     | _, LPAREN ->
@@ -263,7 +267,7 @@ module Parser = struct
     | UNIT -> Ast.Ap (left, Ast.Unit)
     | ATSIGN -> Ast.Ap (left, Ast.Atom (parse_ident l))
     | LBRACK ->
-      let es = Lexer.match_separated_list l SEMI (Fun.flip parse_expr 0) in
+      let es = Lexer.separated_list l SEMI (Fun.flip parse_expr 0) in
       Lexer.consume l RBRACK "Expected ']' to end list.";
       Ast.Ap (left, Ast.EList es)
     | LPAREN ->
@@ -281,11 +285,56 @@ module Parser = struct
         (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
   ;;
 
+  let parse_term_expr (l: Lexer.t) : Ast.term =
+    Ast.TExpr (parse_expr l 0)
+
+  let rec parse_term (l: Lexer.t) : Ast.term =
+    match Lexer.current l with
+    | _, LET ->
+      Lexer.skip ~am:1 l;
+      let i = parse_ident l in
+      let ty =
+        (match Lexer.current l with
+        | _, COLON ->
+          Lexer.skip ~am:1 l;
+          let ty' = parse_ty l in
+          Lexer.consume l EQ "Expected '=' after type in let-expression.";
+          Some ty'
+        | _, ASSIGNMENT -> Lexer.skip ~am:1 l; None
+        | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Unexpected token in let-expression: %s" (Token.show tok)))
+      in
+      let expr = parse_term l in
+      Lexer.consume l IN "Expected 'in' keyword to end let-expression.";
+      Ast.TLet (i, ty, expr)
+    | _, LBRACE ->
+      Lexer.skip ~am:1 l;
+      let terms = Lexer.list_with_end l (fun t -> t = RBRACE) parse_term in
+      Lexer.consume l RBRACE "Expected '}' to end grouping.";
+      Ast.TGrouping terms
+    | _, LPAREN ->
+      Lexer.skip ~am:1 l;
+      let contents = Lexer.separated_list l COMMA (Fun.flip parse_expr 0) in
+      Lexer.consume l RPAREN "Expected ')' to end tuple term.";
+      Ast.TTup contents
+    | _, IF ->
+      Lexer.skip ~am:1 l;
+      let cond = parse_expr l 0 in
+      Lexer.consume l THEN "Expected 'then' keyword after if statement condition.";
+      let texpr = parse_term l in
+      let fexpr =
+        (match Lexer.current l with
+        | _, ELSE ->
+          Lexer.skip ~am:1 l;
+          Some (parse_term l)
+        | _ -> None)
+      in Ast.TIf (cond, texpr, fexpr)
+    | _ -> parse_term_expr l
+
   let parse_dec (l : Lexer.t) : Ast.definition =
     Lexer.consume l DEC "Expected 'dec' keyword.";
     let n = parse_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
-    let ts = Lexer.match_list l (fun t -> t = DOT) parse_ty in
+    let ts = Lexer.list_with_end l (fun t -> t = DOT) parse_ty in
     Lexer.consume l DOT "Expected '.' after 'dec' sig.";
     Ast.Dec (n, ts)
   ;;
@@ -310,7 +359,7 @@ module Parser = struct
       match Lexer.advance l with
       | _, LPAREN ->
         (*TODO: change this to work with uppercase idents too *)
-        let contents = Lexer.match_separated_list l COMMA parse_ident in
+        let contents = Lexer.separated_list l COMMA parse_ident in
         Lexer.consume l RPAREN "Expected a ')' to end the import condition.";
         contents
       | _, IDENT i -> [ i ]

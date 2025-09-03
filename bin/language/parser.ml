@@ -76,14 +76,14 @@ module Lexer = struct
     List.rev @@ aux []
   ;;
 
-  let match_list (tokens : t) (fin: Token.token) (p : t -> 'a) : 'a list =
+  let match_list (tokens : t) (is_end : Token.token -> bool) (p : t -> 'a) : 'a list =
     let rec aux acc =
       let v = p tokens in
-      if not (matches tokens fin)
-      then (
+      if current tokens |> snd |> is_end
+      then v :: acc
+      else (
         let _ = advance tokens in
         v :: acc |> aux)
-      else v :: acc
     in
     List.rev @@ aux []
   ;;
@@ -141,7 +141,7 @@ module Parser = struct
     | PLUS | MINUS -> 4
     | MUL | DIV -> 5
     | NOT -> 6
-    | CONS -> 7
+    | CONS | IDENT _ -> 7
     | EOF -> -1
     | _ -> 0
   ;;
@@ -188,55 +188,56 @@ module Parser = struct
       Error.report_err
         ( Some pos
         , Printf.sprintf "Unexpected token while parsing type: %s" (Token.show tok) )
-  and parse_arrow (l: Lexer.t) (left: Ast.ty) =
+
+  and parse_arrow (l : Lexer.t) (left : Ast.ty) =
     match snd (Lexer.peek l) with
-     | ARROW ->
-       Lexer.skip l ~am:1;
-       let next = parse_ty l in
-       Ast.Arrow (left, next)
-     | _ -> left
+    | ARROW ->
+      Lexer.skip l ~am:1;
+      let next = parse_ty l in
+      Ast.Arrow (left, next)
+    | _ -> left
   ;;
 
   let parse_const (l : Lexer.t) : Ast.expr =
-  Lexer.consume_with
-    l
-    (function
-      | INT i -> Some (Ast.Int i)
-      | FLOAT f -> Some (Ast.Float f)
-      | CHAR c -> Some (Ast.Char c)
-      | STRING s -> Some (Ast.String s)
-      | BOOL b -> Some (Ast.Bool b)
-      | UNIT -> Some Ast.Unit
-      | ATSIGN -> Some (Ast.Atom (parse_ident l))
-      | _ -> None)
-    "Expected a constant."
+    Lexer.consume_with
+      l
+      (function
+        | INT i -> Some (Ast.Int i)
+        | FLOAT f -> Some (Ast.Float f)
+        | CHAR c -> Some (Ast.Char c)
+        | STRING s -> Some (Ast.String s)
+        | BOOL b -> Some (Ast.Bool b)
+        | UNIT -> Some Ast.Unit
+        | ATSIGN -> Some (Ast.Atom (parse_ident l))
+        | _ -> None)
+      "Expected a constant."
   ;;
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
-  let rec parse_expr (l: Lexer.t) (limit: int) : Ast.expr =
+  let rec parse_expr (l : Lexer.t) (limit : int) : Ast.expr =
     let left = nud l in
+    Format.fprintf Format.std_formatter "curr: %a@." Ast.pp_expr left;
     let lbp = Lexer.current l |> snd |> get_bp in
     let rec go lf =
       if lbp > limit && snd (Lexer.current l) <> EOF && snd (Lexer.current l) <> RPAREN
-      then
+      then (
         let _, op_tok = Lexer.advance l in
-        go (led l lf op_tok)
-      else
-        lf
+        go (led l lf op_tok))
+      else lf
     in
     go left
-  and nud (l: Lexer.t) : Ast.expr =
+
+  and nud (l : Lexer.t) : Ast.expr =
     match Lexer.advance l with
-    | _, INT i -> (Ast.Int i)
-    | _, FLOAT f -> (Ast.Float f)
-    | _, CHAR c -> (Ast.Char c)
-    | _, STRING s -> (Ast.String s)
-    | _, BOOL b -> (Ast.Bool b)
+    | _, INT i -> Ast.Int i
+    | _, FLOAT f -> Ast.Float f
+    | _, CHAR c -> Ast.Char c
+    | _, STRING s -> Ast.String s
+    | _, BOOL b -> Ast.Bool b
     | _, UNIT -> Ast.Unit
-    | _, ATSIGN -> (Ast.Atom (parse_ident l))
+    | _, ATSIGN -> Ast.Atom (parse_ident l)
     | _, IDENT i -> Ast.Ident i
     | _, LBRACK ->
-  (* match_separated_list (tokens : t) (sep : Token.token) (p : t -> 'a) : 'a list = *)
       let es = Lexer.match_separated_list l SEMI (Fun.flip parse_expr 0) in
       Lexer.consume l RBRACK "Expected ']' to end list.";
       Ast.EList es
@@ -244,27 +245,47 @@ module Parser = struct
       let e = parse_expr l 0 in
       Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
       e
-    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Unexpected token: %s" (Token.show tok))
-  and led (l: Lexer.t) (left: Ast.expr) = function
-    | PLUS -> Ast.Bop (left, "+", (parse_expr l 4))
-    | MINUS -> Ast.Bop (left, "-", (parse_expr l 4))
-    | MUL -> Ast.Bop (left, "*", (parse_expr l 5))
-    | DIV -> Ast.Bop (left, "/", (parse_expr l 5))
-    | CONS -> Ast.Bop (left, "::", (parse_expr l 7))
-    | NE -> Ast.Bop (left, "/=", (parse_expr l 2))
-    | EQ -> Ast.Bop (left, "=", (parse_expr l 2))
-    | LT -> Ast.Bop (left, "<", (parse_expr l 3))
-    | LTE -> Ast.Bop (left, "<=", (parse_expr l 3))
-    | GT -> Ast.Bop (left, ">", (parse_expr l 3))
-    | GTE -> Ast.Bop (left, ">=", (parse_expr l 3))
-    | op -> Error.report_err (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
+    | pos, tok ->
+      Error.report_err (Some pos, Printf.sprintf "Unexpected token: %s" (Token.show tok))
+
+  and led (l : Lexer.t) (left : Ast.expr) = function
+    | PLUS -> Ast.Bop (left, "+", parse_expr l 4)
+    | MINUS -> Ast.Bop (left, "-", parse_expr l 4)
+    | MUL -> Ast.Bop (left, "*", parse_expr l 5)
+    | DIV -> Ast.Bop (left, "/", parse_expr l 5)
+    | CONS -> Ast.Bop (left, "::", parse_expr l 7)
+    | IDENT i -> Ast.Ap (left, Ast.Ident i)
+    | INT i -> Ast.Ap (left, Ast.Int i)
+    | FLOAT f -> Ast.Ap (left, Ast.Float f)
+    | CHAR c -> Ast.Ap (left, Ast.Char c)
+    | STRING s -> Ast.Ap (left, Ast.String s)
+    | BOOL b -> Ast.Ap (left, Ast.Bool b)
+    | UNIT -> Ast.Ap (left, Ast.Unit)
+    | ATSIGN -> Ast.Ap (left, Ast.Atom (parse_ident l))
+    | LBRACK ->
+      let es = Lexer.match_separated_list l SEMI (Fun.flip parse_expr 0) in
+      Lexer.consume l RBRACK "Expected ']' to end list.";
+      Ast.Ap (left, Ast.EList es)
+    | LPAREN ->
+      let e = parse_expr l 0 in
+      Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
+      Ast.Ap (left, e)
+    | NE -> Ast.Bop (left, "/=", parse_expr l 2)
+    | EQ -> Ast.Bop (left, "=", parse_expr l 2)
+    | LT -> Ast.Bop (left, "<", parse_expr l 3)
+    | LTE -> Ast.Bop (left, "<=", parse_expr l 3)
+    | GT -> Ast.Bop (left, ">", parse_expr l 3)
+    | GTE -> Ast.Bop (left, ">=", parse_expr l 3)
+    | op ->
+      Error.report_err
+        (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
   ;;
 
-  let parse_dec (l : Lexer.t): Ast.definition =
+  let parse_dec (l : Lexer.t) : Ast.definition =
     Lexer.consume l DEC "Expected 'dec' keyword.";
     let n = parse_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
-    let ts = Lexer.match_list l DOT parse_ty in
+    let ts = Lexer.match_list l (fun t -> t = DOT) parse_ty in
     Lexer.consume l DOT "Expected '.' after 'dec' sig.";
     Ast.Dec (n, ts)
   ;;

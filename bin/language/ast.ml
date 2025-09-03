@@ -1,3 +1,5 @@
+(* made with occasional referencing of https://github.com/camllight/camllight/blob/master/sources/src/compiler/syntax.ml *)
+
 (* Type definitions *)
 type ident = string
 type func = string
@@ -32,7 +34,7 @@ type expr =
   | EList of expr list
   | Ident of ident
   | Bop of expr * ident * expr
-  | Ap of ident * expr list
+  | Ap of expr * expr
 
 type term =
   | TExpr of expr
@@ -103,8 +105,8 @@ let rec pp_ty out (ty' : ty) =
   | Prim p -> pp_prim out p
 ;;
 
-let rec pp_expr out (e: expr) =
-  match e with 
+let rec pp_expr out (e : expr) =
+  match e with
   | Ident i -> pp_ident out i
   | Int i -> Format.fprintf out "%d" i
   | Float f -> Format.fprintf out "%.5f" f
@@ -119,15 +121,9 @@ let rec pp_expr out (e: expr) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
       l
-  | Ap (f, args) ->
-    Format.fprintf
-      out
-      "(@[<hov>%s@ %a@])"
-      f
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
-      args
-  | Bop (l, op, r) ->
-    Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
+  | Ap (f, arg) -> Format.fprintf out "(@[<hov>%a@ %a@])" pp_expr f pp_expr arg
+  | Bop (l, op, r) -> Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
+;;
 
 let rec pp_term out (t : term) =
   match t with
@@ -157,8 +153,10 @@ let rec pp_term out (t : term) =
     Format.fprintf
       out
       "(if @[<v>%a@,%a@,%a@])"
-      pp_expr cond
-      pp_term tbranch
+      pp_expr
+      cond
+      pp_term
+      tbranch
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_term)
       fbranch
 ;;

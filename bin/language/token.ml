@@ -125,3 +125,9 @@ let show (t : token) : string =
   | WILDCARD -> sprintf "WILDCARD"
   | EOF -> sprintf "EOF"
 ;;
+
+let is_binop (t : token) : bool =
+  match t with
+  | PLUS | MINUS | MUL | DIV | CONS | NE | EQ | LT | LTE | GT | GTE -> true
+  | _ -> false
+;;

@@ -14,7 +14,7 @@ let () =
     \  num\n\
      ;;"
   in
-  let input = "[a; 100; (5 + (6 * 9))]" in
+  let input = "a * b c 10 [\"hi\"; (func_ap hi bruh)] e" in
   (* let f = In_channel.(open_text "test.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in

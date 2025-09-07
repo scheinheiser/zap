@@ -14,8 +14,8 @@ let () =
      def func num :=\n\
     \  let inc := num + 1 in\n\
     \  num\n\
-    ;;\n\
-    %}"
+     ;;\n\
+     %}"
   in
   (* let input = "def myfunc _ (k :: ks) : when (p x) = (5, 10) ;;" in *)
   (* let f = In_channel.(open_text "test.zap" |> input_all) in *)
@@ -24,5 +24,5 @@ let () =
   let res = Parser.parse_program l in
   border ();
   Ast.pp_program Format.std_formatter res
-  (* Ast.pp_progra Format.std_formatter res *)
 ;;
+(* Ast.pp_progra Format.std_formatter res *)

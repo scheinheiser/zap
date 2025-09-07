@@ -224,11 +224,11 @@ module Parser = struct
   let rec parse_expr (l : Lexer.t) (limit : int) : Ast.expr =
     let left = nud l in
     let lbp = Lexer.current l |> snd |> get_bp in
-    let rec go lf = 
-      if lbp > limit && (Lexer.current l |> snd |> is_delim |> not)
-      then
+    let rec go lf =
+      if lbp > limit && Lexer.current l |> snd |> is_delim |> not
+      then (
         let _, op_tok = Lexer.advance l in
-        go (led l lf op_tok) 
+        go (led l lf op_tok))
       else lf
     in
     go left
@@ -252,7 +252,9 @@ module Parser = struct
       Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
       e
     | pos, tok ->
-      Error.report_err (Some pos, Printf.sprintf "Unexpected token while parsing left: %s" (Token.show tok))
+      Error.report_err
+        ( Some pos
+        , Printf.sprintf "Unexpected token while parsing left: %s" (Token.show tok) )
 
   and led (l : Lexer.t) (left : Ast.expr) = function
     | PLUS -> Ast.Bop (left, "+", parse_expr l 4)
@@ -382,7 +384,12 @@ module Parser = struct
       | _, ASSIGNMENT ->
         Lexer.skip l ~am:1;
         None
-      | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected ':' or ':=' after definition arguments, but got '%s'." (Token.show tok))
+      | pos, tok ->
+        Error.report_err
+          ( Some pos
+          , Printf.sprintf
+              "Expected ':' or ':=' after definition arguments, but got '%s'."
+              (Token.show tok) )
     in
     let body = Lexer.separated_list l IN parse_term in
     let with_block =
@@ -392,12 +399,18 @@ module Parser = struct
         let block = Lexer.list_with_end l (( = ) SEMISEMI) parse_definition in
         Some block
       | _, SEMISEMI -> None
-      | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected either ';;' or with-block to end function definition, but got '%s'." (Token.show tok))
+      | pos, tok ->
+        Error.report_err
+          ( Some pos
+          , Printf.sprintf
+              "Expected either ';;' or with-block to end function definition, but got \
+               '%s'."
+              (Token.show tok) )
     in
     Lexer.consume l SEMISEMI "Expected ';;' to end function definition.";
     Ast.Def (n, args, when_block, body, with_block)
 
-  and parse_args (l: Lexer.t) : Ast.pattern list =
+  and parse_args (l : Lexer.t) : Ast.pattern list =
     let _, next = Lexer.peek l in
     match next with
     | WILDCARD ->
@@ -471,16 +484,23 @@ module Parser = struct
     if cond_type then Ast.CWith values else Ast.CWithout values
   ;;
 
-  let parse_toplvl (l: Lexer.t): Ast.top_lvl =
+  let parse_toplvl (l : Lexer.t) : Ast.top_lvl =
     Printf.printf "top: %s\n" (Lexer.current l |> snd |> Token.show);
     match Lexer.current l with
     | _, ATSIGN -> Ast.TImport (parse_import l)
     | _, DEC -> Ast.TDef (parse_dec l)
     | _, DEF -> Ast.TDef (parse_def l)
-    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected an import, declaration or definition but got '%s'." (Token.show tok))
+    | pos, tok ->
+      Error.report_err
+        ( Some pos
+        , Printf.sprintf
+            "Expected an import, declaration or definition but got '%s'."
+            (Token.show tok) )
+  ;;
 
-  let parse_program (l: Lexer.t): Ast.program = 
+  let parse_program (l : Lexer.t) : Ast.program =
     let mod' = parse_module l in
-    let top_lvl = Lexer.list_with_end l ((=) EOF) parse_toplvl in
-    (mod', top_lvl)
+    let top_lvl = Lexer.list_with_end l (( = ) EOF) parse_toplvl in
+    mod', top_lvl
+  ;;
 end

@@ -1,4 +1,4 @@
 (executable
  (public_name zap)
  (name main)
- (libraries language))
+ (libraries language util))

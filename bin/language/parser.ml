@@ -9,10 +9,11 @@ let rec any (l : 'a list) (p : 'a -> bool) : bool =
   | x :: xs -> p x || any xs p
 ;;
 
-let is_delim (t: Token.token): bool =
+let is_delim (t : Token.token) : bool =
   match t with
-  | EOF | RPAREN | COMMA -> true
+  | EOF | RPAREN | COMMA | RBRACE | IN | SEMI -> true
   | _ -> false
+;;
 
 (* main things *)
 module Lexer = struct
@@ -146,7 +147,8 @@ module Parser = struct
     | PLUS | MINUS -> 4
     | MUL | DIV -> 5
     | NOT -> 6
-    | CONS | IDENT _ -> 7
+    | CONS -> 7
+    | IDENT _ | INT _ | FLOAT _ | CHAR _ | STRING _ | BOOL _ | UNIT | ATSIGN -> 10
     | EOF -> -1
     | _ -> 0
   ;;
@@ -222,11 +224,11 @@ module Parser = struct
   let rec parse_expr (l : Lexer.t) (limit : int) : Ast.expr =
     let left = nud l in
     let lbp = Lexer.current l |> snd |> get_bp in
-    let rec go lf =
-      if lbp > limit && not (Lexer.current l |> snd |> is_delim)
-      then (
+    let rec go lf = 
+      if lbp > limit && (Lexer.current l |> snd |> is_delim |> not)
+      then
         let _, op_tok = Lexer.advance l in
-        go (led l lf op_tok))
+        go (led l lf op_tok) 
       else lf
     in
     go left
@@ -250,7 +252,7 @@ module Parser = struct
       Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
       e
     | pos, tok ->
-      Error.report_err (Some pos, Printf.sprintf "Unexpected token: %s" (Token.show tok))
+      Error.report_err (Some pos, Printf.sprintf "Unexpected token while parsing left: %s" (Token.show tok))
 
   and led (l : Lexer.t) (left : Ast.expr) = function
     | PLUS -> Ast.Bop (left, "+", parse_expr l 4)
@@ -285,30 +287,31 @@ module Parser = struct
         (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
   ;;
 
-  let parse_term_expr (l: Lexer.t) : Ast.term =
-    Ast.TExpr (parse_expr l 0)
-
-  let rec parse_term (l: Lexer.t) : Ast.term =
+  let rec parse_term (l : Lexer.t) : Ast.term =
     match Lexer.current l with
     | _, LET ->
       Lexer.skip ~am:1 l;
       let i = parse_ident l in
       let ty =
-        (match Lexer.current l with
+        match Lexer.current l with
         | _, COLON ->
           Lexer.skip ~am:1 l;
           let ty' = parse_ty l in
           Lexer.consume l EQ "Expected '=' after type in let-expression.";
           Some ty'
-        | _, ASSIGNMENT -> Lexer.skip ~am:1 l; None
-        | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Unexpected token in let-expression: %s" (Token.show tok)))
+        | _, ASSIGNMENT ->
+          Lexer.skip ~am:1 l;
+          None
+        | pos, tok ->
+          Error.report_err
+            ( Some pos
+            , Printf.sprintf "Unexpected token in let-expression: %s" (Token.show tok) )
       in
       let expr = parse_term l in
-      Lexer.consume l IN "Expected 'in' keyword to end let-expression.";
       Ast.TLet (i, ty, expr)
     | _, LBRACE ->
       Lexer.skip ~am:1 l;
-      let terms = Lexer.list_with_end l (fun t -> t = RBRACE) parse_term in
+      let terms = Lexer.separated_list l IN parse_term in
       Lexer.consume l RBRACE "Expected '}' to end grouping.";
       Ast.TGrouping terms
     | _, LPAREN ->
@@ -322,15 +325,101 @@ module Parser = struct
       Lexer.consume l THEN "Expected 'then' keyword after if statement condition.";
       let texpr = parse_term l in
       let fexpr =
-        (match Lexer.current l with
+        match Lexer.current l with
         | _, ELSE ->
           Lexer.skip ~am:1 l;
           Some (parse_term l)
-        | _ -> None)
-      in Ast.TIf (cond, texpr, fexpr)
-    | _ -> parse_term_expr l
+        | _ -> None
+      in
+      Ast.TIf (cond, texpr, fexpr)
+    | _ -> Ast.TExpr (parse_expr l 0)
+  ;;
 
-  let parse_dec (l : Lexer.t) : Ast.definition =
+  let rec parse_pattern (l : Lexer.t) : Ast.pattern =
+    match Lexer.advance l with
+    | _, WILDCARD -> Ast.PWild
+    | _, LBRACK ->
+      Lexer.consume l RBRACK "Expected ']' to end empty list pattern.";
+      Ast.PList
+    | _, LPAREN ->
+      let l' = parse_pattern l in
+      Lexer.consume l CONS "Expected '::' in list cons pattern.";
+      let r = parse_pattern l in
+      Lexer.consume l RPAREN "Expected ')' to end list cons pattern.";
+      Ast.PCons (l', r)
+    | _, IDENT i -> Ast.PIdent i
+    | pos, tok ->
+      Error.report_err
+        ( Some pos
+        , Printf.sprintf
+            "Expected definition argument pattern, but got '%s'."
+            (Token.show tok) )
+  ;;
+
+  let rec parse_definition (l : Lexer.t) : Ast.definition =
+    match Lexer.current l with
+    | _, DEC -> parse_dec l
+    | _, DEF -> parse_def l
+    | pos, tok ->
+      Error.report_err
+        ( Some pos
+        , Printf.sprintf
+            "Expected 'dec' or 'def' keyword to begin a definition, but got '%s'."
+            (Token.show tok) )
+
+  and parse_def (l : Lexer.t) : Ast.definition =
+    Lexer.consume l DEF "Expected 'def' keyword.";
+    let n = parse_ident l in
+    let args = parse_args l in
+    let when_block =
+      match Lexer.current l with
+      | _, COLON ->
+        Lexer.skip l ~am:1;
+        Lexer.consume l WHEN "Expected 'when' after ':' in def.";
+        let block = parse_term l in
+        Lexer.consume l EQ "Expected '=' after when block.";
+        Some block
+      | _, ASSIGNMENT ->
+        Lexer.skip l ~am:1;
+        None
+      | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected ':' or ':=' after definition arguments, but got '%s'." (Token.show tok))
+    in
+    let body = Lexer.separated_list l IN parse_term in
+    let with_block =
+      match Lexer.current l with
+      | _, WITH ->
+        Lexer.skip l ~am:1;
+        let block = Lexer.list_with_end l (( = ) SEMISEMI) parse_definition in
+        Some block
+      | _, SEMISEMI -> None
+      | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected either ';;' or with-block to end function definition, but got '%s'." (Token.show tok))
+    in
+    Lexer.consume l SEMISEMI "Expected ';;' to end function definition.";
+    Ast.Def (n, args, when_block, body, with_block)
+
+  and parse_args (l: Lexer.t) : Ast.pattern list =
+    let _, next = Lexer.peek l in
+    match next with
+    | WILDCARD ->
+      Lexer.skip l ~am:1;
+      Ast.PWild :: parse_args l
+    | LBRACK ->
+      Lexer.skip l ~am:1;
+      Lexer.consume l RBRACK "Expected ']' to end empty list pattern.";
+      Ast.PList :: parse_args l
+    | LPAREN ->
+      Lexer.skip l ~am:1;
+      let l' = parse_pattern l in
+      Lexer.consume l CONS "Expected '::' in list cons pattern.";
+      let r = parse_pattern l in
+      Lexer.consume l RPAREN "Expected ')' to end list cons pattern.";
+      Ast.PCons (l', r) :: parse_args l
+    | IDENT i ->
+      Lexer.skip l ~am:1;
+      Ast.PIdent i :: parse_args l
+    | _ -> []
+
+  and parse_dec (l : Lexer.t) : Ast.definition =
     Lexer.consume l DEC "Expected 'dec' keyword.";
     let n = parse_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
@@ -345,7 +434,18 @@ module Parser = struct
     parse_upper_ident l
   ;;
 
-  let parse_import_cond (l : Lexer.t) : Ast.import_cond =
+  let rec parse_import (l : Lexer.t) : Ast.import =
+    Lexer.consume l ATSIGN "Expected an '@' before 'import' keyword.";
+    Lexer.consume l IMPORT "Expected the 'import' keyword.";
+    let name = parse_upper_ident l in
+    let cond =
+      if Lexer.matches l WITH || Lexer.matches l WITHOUT
+      then Some (parse_import_cond l)
+      else None
+    in
+    name, cond
+
+  and parse_import_cond (l : Lexer.t) : Ast.import_cond =
     let cond_type =
       Lexer.consume_with
         l
@@ -371,15 +471,16 @@ module Parser = struct
     if cond_type then Ast.CWith values else Ast.CWithout values
   ;;
 
-  let parse_import (l : Lexer.t) : Ast.import =
-    Lexer.consume l ATSIGN "Expected an '@' before 'module' keyword.";
-    Lexer.consume l IMPORT "Expected the 'import' keyword.";
-    let name = parse_upper_ident l in
-    let cond =
-      if Lexer.matches l WITH || Lexer.matches l WITHOUT
-      then Some (parse_import_cond l)
-      else None
-    in
-    name, cond
-  ;;
+  let parse_toplvl (l: Lexer.t): Ast.top_lvl =
+    Printf.printf "top: %s\n" (Lexer.current l |> snd |> Token.show);
+    match Lexer.current l with
+    | _, ATSIGN -> Ast.TImport (parse_import l)
+    | _, DEC -> Ast.TDef (parse_dec l)
+    | _, DEF -> Ast.TDef (parse_def l)
+    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected an import, declaration or definition but got '%s'." (Token.show tok))
+
+  let parse_program (l: Lexer.t): Ast.program = 
+    let mod' = parse_module l in
+    let top_lvl = Lexer.list_with_end l ((=) EOF) parse_toplvl in
+    (mod', top_lvl)
 end

@@ -113,7 +113,7 @@ let rec pp_expr out (e : expr) =
   | String s -> Format.fprintf out "%s\"" s
   | Char c' -> Format.fprintf out "'%c'" c'
   | Bool b -> Format.fprintf out "%b" b
-  | Atom a -> Format.fprintf out "%@%s" a
+  | Atom a -> Format.fprintf out "%s" a
   | Unit -> Format.fprintf out "()"
   | EList l ->
     Format.fprintf
@@ -121,7 +121,7 @@ let rec pp_expr out (e : expr) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
       l
-  | Ap (f, arg) -> Format.fprintf out "(@[<hov>%a@ %a@])" pp_expr f pp_expr arg
+  | Ap (f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) -> Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
 ;;
 
@@ -132,7 +132,7 @@ let rec pp_term out (t : term) =
     Format.fprintf
       out
       "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_expr)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
       t
   | TLet (i, ty, v) ->
     Format.fprintf

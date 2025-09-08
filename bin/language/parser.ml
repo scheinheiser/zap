@@ -1,5 +1,4 @@
 open Util
-
 (* made using https://github.com/contificate/summary as a reference *)
 
 (* utils *)
@@ -94,23 +93,6 @@ module Lexer = struct
     List.rev @@ aux []
   ;;
 
-  let match_with_either
-        (tokens : t)
-        (p1 : t -> 'a option)
-        (p2 : t -> 'a option)
-        (msg : string)
-    : 'a
-    =
-    let prev = tokens.tokens in
-    match p1 tokens with
-    | Some v -> v
-    | None ->
-      tokens.tokens <- prev;
-      (match p2 tokens with
-       | Some v -> v
-       | None -> Error.report_err (None, msg))
-  ;;
-
   let consume (tokens : t) (tok : Token.token) (msg : string) =
     let pos, next = advance tokens in
     if next <> tok then Error.report_err (Some pos, msg)
@@ -121,13 +103,6 @@ module Lexer = struct
     match f next with
     | Some v -> v
     | None -> Error.report_err (Some pos, msg)
-  ;;
-
-  (* optionally consume a token. has no effect if there isn't a match. *)
-  let consume_opt (tokens : t) (tok : Token.token) =
-    let previous = tokens.tokens in
-    let _, next = advance tokens in
-    if next <> tok then tokens.tokens <- previous
   ;;
 
   let consume_any_of (tokens : t) (tok : Token.token list) (msg : string) =
@@ -171,15 +146,6 @@ module Parser = struct
       "Expected an identifier."
   ;;
 
-  let parse_prim (l : Lexer.t) : Ast.prim =
-    Lexer.consume_with
-      l
-      (function
-        | TY_PRIM p -> Some p
-        | _ -> None)
-      "Expected a primitive type."
-  ;;
-
   let rec parse_ty (l : Lexer.t) : Ast.ty =
     match Lexer.advance l with
     | _, TY_PRIM t -> parse_arrow l (Ast.Prim t)
@@ -203,21 +169,6 @@ module Parser = struct
       let next = parse_ty l in
       Ast.Arrow (left, next)
     | _ -> left
-  ;;
-
-  let parse_const (l : Lexer.t) : Ast.expr =
-    Lexer.consume_with
-      l
-      (function
-        | INT i -> Some (Ast.Int i)
-        | FLOAT f -> Some (Ast.Float f)
-        | CHAR c -> Some (Ast.Char c)
-        | STRING s -> Some (Ast.String s)
-        | BOOL b -> Some (Ast.Bool b)
-        | UNIT -> Some Ast.Unit
-        | ATSIGN -> Some (Ast.Atom (parse_ident l))
-        | _ -> None)
-      "Expected a constant."
   ;;
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
@@ -290,26 +241,12 @@ module Parser = struct
   ;;
 
   let rec parse_args (l : Lexer.t) : Ast.pattern list =
-    let _, next = Lexer.peek l in
-    match next with
-    | WILDCARD ->
-      Lexer.skip l ~am:1;
-      Ast.PWild :: parse_args l
-    | LBRACK ->
-      Lexer.skip l ~am:1;
-      Lexer.consume l RBRACK "Expected ']' to end empty list pattern.";
-      Ast.PList :: parse_args l
-    | LPAREN ->
-      Lexer.skip l ~am:1;
-      let l' = parse_pattern l in
-      Lexer.consume l CONS "Expected '::' in list cons pattern.";
-      let r = parse_pattern l in
-      Lexer.consume l RPAREN "Expected ')' to end list cons pattern.";
-      Ast.PCons (l', r) :: parse_args l
-    | IDENT i ->
-      Lexer.skip l ~am:1;
-      Ast.PIdent i :: parse_args l
-    | _ -> []
+    let rec go lex acc =
+      match Lexer.peek lex |> snd with
+      | WILDCARD | LBRACK | LPAREN | IDENT _ -> go lex (parse_pattern lex :: acc)
+      | _ -> List.rev acc
+    in
+    go l []
 
   and parse_pattern (l : Lexer.t) : Ast.pattern =
     match Lexer.advance l with
@@ -426,16 +363,19 @@ module Parser = struct
         Lexer.skip l ~am:1;
         let block = Lexer.list_with_end l (( = ) SEMISEMI) parse_definition in
         Some block
-      | _, SEMISEMI -> None
+      | _, SEMISEMI | _, SEMI -> None
       | pos, tok ->
         Error.report_err
           ( Some pos
           , Printf.sprintf
-              "Expected either ';;' or with-block to end function definition, but got \
-               '%s'."
+              "Expected either ';;', ';' or with-block to end function definition, but \
+               got '%s'."
               (Token.show tok) )
     in
-    Lexer.consume l SEMISEMI "Expected ';;' to end function definition.";
+    Lexer.consume_any_of
+      l
+      [ SEMISEMI; SEMI ]
+      "Expected ';;' or ';' to end function definition.";
     Ast.Def (n, args, when_block, body, with_block)
 
   and parse_dec (l : Lexer.t) : Ast.definition =
@@ -477,8 +417,7 @@ module Parser = struct
     let values =
       match Lexer.advance l with
       | _, LPAREN ->
-        (*TODO: change this to work with uppercase idents too *)
-        let contents = Lexer.separated_list l COMMA parse_ident in
+        let contents = Lexer.separated_list l COMMA parse_import_ident in
         Lexer.consume l RPAREN "Expected a ')' to end the import condition.";
         contents
       | _, IDENT i -> [ i ]
@@ -488,6 +427,15 @@ module Parser = struct
           (Some pos, "Expected identifier or comma-separated list of identifiers.")
     in
     if cond_type then Ast.CWith values else Ast.CWithout values
+
+  and parse_import_ident (l : Lexer.t) : Ast.ident =
+    Lexer.consume_with
+      l
+      (function
+        | UPPER_IDENT i -> Some i
+        | IDENT i -> Some i
+        | _ -> None)
+      "Expected an identifier."
   ;;
 
   let parse_toplvl (l : Lexer.t) : Ast.top_lvl =

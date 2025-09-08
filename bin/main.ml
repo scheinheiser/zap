@@ -17,6 +17,7 @@ let () =
     \  num + 2\n\
      ;;"
   in
+  (* let input = "\"empty list\"" in *)
   let input = In_channel.(open_text "test.zap" |> input_all) in
   print_endline input;
   let l = Lexer.of_string input in

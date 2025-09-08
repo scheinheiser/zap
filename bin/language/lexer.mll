@@ -73,7 +73,7 @@ let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':
 
 let newline = '\n' | '\r' | "\r\n"
 let whitespace = [' ' '\t']+
-let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']+ | symbol+ | newline+
+let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' ' ' '\''] | symbol | newline
 let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
 
 rule token = parse
@@ -81,7 +81,7 @@ rule token = parse
   | newline     {next_line lexbuf; token lexbuf}
   | int as i    {with_pos lexbuf (INT (int_of_string i))}
   | float as f  {with_pos lexbuf (FLOAT (float_of_string f))}
-  | '\"' str as s '\"' {with_pos lexbuf (STRING s)}
+  | '\"' (str+ as s) '\"' {with_pos lexbuf (STRING s)}
   | '{'         {with_pos lexbuf LBRACE}
   | '}'         {with_pos lexbuf RBRACE}
   | "()"        {with_pos lexbuf (TY_PRIM Ast.PUnit)}

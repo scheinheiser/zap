@@ -46,6 +46,7 @@
     ("when", WHEN);
     ("dec", DEC);
     ("def", DEF);
+    ("lam", LAM);
   ]
 
   let builtin_op = [

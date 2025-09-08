@@ -36,24 +36,25 @@ type expr =
   | Bop of expr * ident * expr
   | Ap of expr * expr
 
+type pattern =
+  | PIdent of ident
+  | PWild (* wildcard, '_' *)
+  | PCons of pattern * pattern
+  | PList (* specifically [] *)
+
 type term =
   | TExpr of expr
   | TLet of ident * ty option * term
   | TGrouping of term list
   | TIf of expr * term * term option
   | TTup of expr list
+  | TLam of pattern list * term
 
 type import_cond =
   | CWith of ident list
   | CWithout of ident list
 
 type import = module_name * import_cond option
-
-type pattern =
-  | PIdent of ident
-  | PWild (* wildcard, '_' *)
-  | PCons of pattern * pattern
-  | PList (* specifically [] *)
 
 type definition =
   | Dec of func * ty list
@@ -125,6 +126,14 @@ let rec pp_expr out (e : expr) =
   | Bop (l, op, r) -> Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
 ;;
 
+let rec pp_pattern out (arg : pattern) =
+  match arg with
+  | PIdent i -> pp_ident out i
+  | PWild -> Format.fprintf out "_"
+  | PList -> Format.fprintf out "[]"
+  | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
+;;
+
 let rec pp_term out (t : term) =
   match t with
   | TExpr e -> pp_expr out e
@@ -159,6 +168,14 @@ let rec pp_term out (t : term) =
       tbranch
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_term)
       fbranch
+  | TLam (args, body) ->
+    Format.fprintf
+      out
+      "(lam @[<v>(%a) %a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern)
+      args
+      pp_term
+      body
 ;;
 
 let pp_import_cond out (cond : import_cond) =
@@ -184,14 +201,6 @@ let pp_import out ((mod_name, cond) : import) =
     mod_name
     Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
     cond
-;;
-
-let rec pp_pattern out (arg : pattern) =
-  match arg with
-  | PIdent i -> pp_ident out i
-  | PWild -> Format.fprintf out "_"
-  | PList -> Format.fprintf out "[]"
-  | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
 ;;
 
 let pp_when_block out (when_block : term option) =

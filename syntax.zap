@@ -49,7 +49,7 @@ def map := go
   with
     % you can omit the dec for functions/variables in with-blocks
     def go _ [] := [];
-    def go f (x :: xs) := (f x) :: (go f xs)
+    def go f (x :: xs) := f x :: go f xs
     ;;
 ;;
 
@@ -57,7 +57,7 @@ def map := go
 dec lamTest : int -> bool.
 def lamTest num :=
   % you can have let-bindings act as functions through the use of lambdas
-  let test_lambda : int -> string. = lam n -> show n in 
+  let test_lambda : int -> string = lam n -> show n in 
   length (test_lambda num) > 10
 
 dec sayHello : string -> ().

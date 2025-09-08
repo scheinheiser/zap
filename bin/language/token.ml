@@ -6,7 +6,6 @@ type token =
   | STRING of string
   | CHAR of char
   | BOOL of bool
-  | ATOM of string
   | UNIT
   | TY_PRIM of Ast.prim
   | IDENT of string
@@ -20,6 +19,7 @@ type token =
   | ELSE
   | DEC
   | DEF
+  | LAM
   | LET
   | IN
   | MODULE
@@ -77,7 +77,6 @@ let show (t : token) : string =
   | STRING s -> sprintf "STRING %s" s
   | CHAR c -> sprintf "CHAR %c" c
   | BOOL b -> sprintf "BOOL %b" b
-  | ATOM a -> sprintf "ATOM %s" a
   | UNIT -> sprintf "UNIT"
   | TY_PRIM t -> sprintf "TY_PRIM %s" (show_prim t)
   | IDENT i -> sprintf "IDENT %s" i
@@ -91,6 +90,7 @@ let show (t : token) : string =
   | ELSE -> sprintf "ELSE"
   | DEC -> sprintf "DEC"
   | DEF -> sprintf "DEF"
+  | LAM -> sprintf "LAM"
   | LET -> sprintf "LET"
   | IN -> sprintf "IN"
   | MODULE -> sprintf "MODULE"

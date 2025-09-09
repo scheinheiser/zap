@@ -8,6 +8,38 @@ let rec any (l : 'a list) (p : 'a -> bool) : bool =
   | x :: xs -> p x || any xs p
 ;;
 
+let is_const (t : Token.token) : bool =
+  match t with
+  | INT _ | FLOAT _ | STRING _ | CHAR _ | BOOL _ | ATSIGN | UNIT -> true
+  | _ -> false
+;;
+
+let is_op (t : Token.token) : bool =
+  match t with
+  | OP _ | PLUS | MINUS | DIV | MUL | AND | OR | LT | GT | LTE | GTE | CONS | NE | EQ ->
+    true
+  | _ -> false
+;;
+
+let op_to_string (t : Token.token) : string =
+  match t with
+  | OP o -> o
+  | PLUS -> "+"
+  | MINUS -> "-"
+  | DIV -> "/"
+  | MUL -> "*"
+  | AND -> "&&"
+  | OR -> "||"
+  | LT -> "<"
+  | GT -> ">"
+  | LTE -> "<="
+  | GTE -> ">="
+  | CONS -> "::"
+  | NE -> "/="
+  | EQ -> "="
+  | _ -> ""
+;;
+
 let is_delim (t : Token.token) : bool =
   match t with
   | EOF | RPAREN | COMMA | RBRACE | IN | SEMI | SEMISEMI | IF | THEN | ELSE -> true
@@ -82,15 +114,13 @@ module Lexer = struct
   ;;
 
   let list_with_end (stream : t) (is_end : Token.token -> bool) (p : t -> 'a) : 'a list =
-    let rec aux acc =
-      let v = p stream in
-      if current stream |> snd |> is_end
-      then v :: acc
-      else (
-        let _ = advance stream in
-        v :: acc |> aux)
+    let rec go l acc =
+      let _, next = peek l in
+      match next with
+      | t when is_end t -> List.rev acc
+      | _ -> go l (p l :: acc)
     in
-    List.rev @@ aux []
+    go stream []
   ;;
 
   let consume (tokens : t) (tok : Token.token) (msg : string) =
@@ -118,11 +148,13 @@ module Parser = struct
     match t with
     | LPAREN | RPAREN -> 0
     | NE | EQ -> 2
-    | LT | GT | LTE | GTE -> 3
-    | PLUS | MINUS -> 4
-    | MUL | DIV -> 5
-    | NOT -> 6
-    | CONS -> 7
+    | AND | OR -> 3
+    | LT | GT | LTE | GTE -> 4
+    | PLUS | MINUS -> 5
+    | MUL | DIV -> 6
+    | NOT -> 7
+    | CONS -> 8
+    | OP _ -> 9
     | IDENT _ | INT _ | FLOAT _ | CHAR _ | STRING _ | BOOL _ | UNIT | ATSIGN -> 10
     | EOF -> -1
     | _ -> 0
@@ -176,51 +208,71 @@ module Parser = struct
     let left = nud l in
     let lbp = Lexer.current l |> snd |> get_bp in
     let rec go lf =
-      if lbp > limit && Lexer.current l |> snd |> is_delim |> not
+      if lbp > limit && not (Lexer.current l |> snd |> is_delim)
       then (
         let _, op_tok = Lexer.advance l in
-        go (led l lf op_tok))
+        go (led l lf (get_bp op_tok) op_tok))
       else lf
     in
     go left
 
   and nud (l : Lexer.t) : Ast.expr =
     match Lexer.advance l with
-    | _, INT i -> Ast.Int i
-    | _, FLOAT f -> Ast.Float f
-    | _, CHAR c -> Ast.Char c
-    | _, STRING s -> Ast.String s
-    | _, BOOL b -> Ast.Bool b
-    | _, UNIT -> Ast.Unit
-    | _, ATSIGN -> Ast.Atom (parse_ident l)
+    | _, INT i -> Ast.Const (Ast.Int i)
+    | _, FLOAT f -> Ast.Const (Ast.Float f)
+    | _, CHAR c -> Ast.Const (Ast.Char c)
+    | _, STRING s -> Ast.Const (Ast.String s)
+    | _, BOOL b -> Ast.Const (Ast.Bool b)
+    | _, UNIT -> Ast.Const Ast.Unit
+    | _, ATSIGN -> Ast.Const (Ast.Atom (parse_ident l))
     | _, IDENT i -> Ast.Ident i
     | _, LBRACK ->
-      let es = Lexer.separated_list l SEMI (Fun.flip parse_expr 0) in
+      let es =
+        match Lexer.current l |> snd with
+        | RBRACK -> []
+        | _ -> Lexer.separated_list l SEMI (Fun.flip parse_expr 0)
+      in
       Lexer.consume l RBRACK "Expected ']' to end list.";
       Ast.EList es
     | _, LPAREN ->
-      let e = parse_expr l 0 in
-      Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
+      let _, next = Lexer.peek l in
+      let e =
+        match next with
+        | o when is_op o ->
+          Lexer.skip l ~am:1;
+          Ast.Ident (op_to_string next)
+        | _ -> parse_expr l 0
+      in
+      Lexer.consume l RPAREN "Expected ')' to end grouped expression or prefix operator.";
       e
     | pos, tok ->
       Error.report_err
         ( Some pos
         , Printf.sprintf "Unexpected token while parsing left: %s" (Token.show tok) )
 
-  and led (l : Lexer.t) (left : Ast.expr) = function
-    | PLUS -> Ast.Bop (left, "+", parse_expr l 4)
-    | MINUS -> Ast.Bop (left, "-", parse_expr l 4)
-    | MUL -> Ast.Bop (left, "*", parse_expr l 5)
-    | DIV -> Ast.Bop (left, "/", parse_expr l 5)
-    | CONS -> Ast.Bop (left, "::", parse_expr l 7)
+  and led (l : Lexer.t) (left : Ast.expr) (lbp : int) = function
+    | PLUS -> Ast.Bop (left, "+", parse_expr l lbp)
+    | MINUS -> Ast.Bop (left, "-", parse_expr l lbp)
+    | MUL -> Ast.Bop (left, "*", parse_expr l lbp)
+    | DIV -> Ast.Bop (left, "/", parse_expr l lbp)
+    | CONS -> Ast.Bop (left, "::", parse_expr l lbp)
+    | NE -> Ast.Bop (left, "/=", parse_expr l lbp)
+    | EQ -> Ast.Bop (left, "=", parse_expr l lbp)
+    | LT -> Ast.Bop (left, "<", parse_expr l lbp)
+    | LTE -> Ast.Bop (left, "<=", parse_expr l lbp)
+    | GT -> Ast.Bop (left, ">", parse_expr l lbp)
+    | GTE -> Ast.Bop (left, ">=", parse_expr l lbp)
+    | AND -> Ast.Bop (left, "&&", parse_expr l lbp)
+    | OR -> Ast.Bop (left, "||", parse_expr l lbp)
+    | OP o -> Ast.Bop (left, o, parse_expr l lbp)
     | IDENT i -> Ast.Ap (left, Ast.Ident i)
-    | INT i -> Ast.Ap (left, Ast.Int i)
-    | FLOAT f -> Ast.Ap (left, Ast.Float f)
-    | CHAR c -> Ast.Ap (left, Ast.Char c)
-    | STRING s -> Ast.Ap (left, Ast.String s)
-    | BOOL b -> Ast.Ap (left, Ast.Bool b)
-    | UNIT -> Ast.Ap (left, Ast.Unit)
-    | ATSIGN -> Ast.Ap (left, Ast.Atom (parse_ident l))
+    | INT i -> Ast.Ap (left, Ast.Const (Ast.Int i))
+    | FLOAT f -> Ast.Ap (left, Ast.Const (Ast.Float f))
+    | CHAR c -> Ast.Ap (left, Ast.Const (Ast.Char c))
+    | STRING s -> Ast.Ap (left, Ast.Const (Ast.String s))
+    | BOOL b -> Ast.Ap (left, Ast.Const (Ast.Bool b))
+    | UNIT -> Ast.Ap (left, Ast.Const Ast.Unit)
+    | ATSIGN -> Ast.Ap (left, Ast.Const (Ast.Atom (parse_ident l)))
     | LBRACK ->
       let es = Lexer.separated_list l SEMI (Fun.flip parse_expr 0) in
       Lexer.consume l RBRACK "Expected ']' to end list.";
@@ -229,31 +281,31 @@ module Parser = struct
       let e = parse_expr l 0 in
       Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
       Ast.Ap (left, e)
-    | NE -> Ast.Bop (left, "/=", parse_expr l 2)
-    | EQ -> Ast.Bop (left, "=", parse_expr l 2)
-    | LT -> Ast.Bop (left, "<", parse_expr l 3)
-    | LTE -> Ast.Bop (left, "<=", parse_expr l 3)
-    | GT -> Ast.Bop (left, ">", parse_expr l 3)
-    | GTE -> Ast.Bop (left, ">=", parse_expr l 3)
     | op ->
       Error.report_err
-        (None, Printf.sprintf "Expecting binary operator, got '%s'." (Token.show op))
+        (None, Printf.sprintf "Expected binary operator, got '%s'." (Token.show op))
   ;;
 
   let rec parse_args (l : Lexer.t) : Ast.pattern list =
-    let rec go lex acc =
-      match Lexer.peek lex |> snd with
-      | WILDCARD | LBRACK | LPAREN | IDENT _ -> go lex (parse_pattern lex :: acc)
-      | _ -> List.rev acc
-    in
-    go l []
+    Lexer.list_with_end
+      l
+      (function
+        | WILDCARD | LBRACK | LPAREN | IDENT _ -> false
+        | t when is_const t -> false
+        | _ -> true)
+      parse_pattern
 
   and parse_pattern (l : Lexer.t) : Ast.pattern =
     match Lexer.advance l with
     | _, WILDCARD -> Ast.PWild
     | _, LBRACK ->
+      let contents =
+        match Lexer.current l |> snd with
+        | RBRACK -> []
+        | _ -> Lexer.separated_list l SEMI parse_pattern
+      in
       Lexer.consume l RBRACK "Expected ']' to end empty list pattern.";
-      Ast.PList
+      Ast.PList contents
     | _, LPAREN ->
       let l' = parse_pattern l in
       Lexer.consume l CONS "Expected '::' in list cons pattern.";
@@ -261,6 +313,13 @@ module Parser = struct
       Lexer.consume l RPAREN "Expected ')' to end list cons pattern.";
       Ast.PCons (l', r)
     | _, IDENT i -> Ast.PIdent i
+    | _, INT i -> Ast.PConst (Ast.Int i)
+    | _, FLOAT i -> Ast.PConst (Ast.Float i)
+    | _, STRING i -> Ast.PConst (Ast.String i)
+    | _, CHAR i -> Ast.PConst (Ast.Char i)
+    | _, BOOL i -> Ast.PConst (Ast.Bool i)
+    | _, UNIT -> Ast.PConst Ast.Unit
+    | _, ATSIGN -> Ast.PConst (Ast.Atom (parse_ident l))
     | pos, tok ->
       Error.report_err
         ( Some pos
@@ -361,7 +420,9 @@ module Parser = struct
       match Lexer.current l with
       | _, WITH ->
         Lexer.skip l ~am:1;
-        let block = Lexer.list_with_end l (( = ) SEMISEMI) parse_definition in
+        let block =
+          Lexer.list_with_end l (fun t -> t = SEMI || SEMISEMI = t) parse_definition
+        in
         Some block
       | _, SEMISEMI | _, SEMI -> None
       | pos, tok ->
@@ -453,12 +514,7 @@ module Parser = struct
 
   let parse_program (l : Lexer.t) : Ast.program =
     let mod' = parse_module l in
-    let rec go lex acc =
-      let _, next = Lexer.peek lex in
-      match next with
-      | EOF -> List.rev acc
-      | _ -> go lex (parse_toplvl lex :: acc)
-    in
-    mod', go l []
+    let prog = Lexer.list_with_end l (( = ) EOF) parse_toplvl in
+    mod', prog
   ;;
 end

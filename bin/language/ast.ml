@@ -23,7 +23,7 @@ type ty =
   | Tuple of ty list
   | Prim of prim
 
-type expr =
+type const =
   | Int of int
   | Float of float
   | String of string
@@ -31,16 +31,20 @@ type expr =
   | Bool of bool
   | Atom of ident
   | Unit
+
+type expr =
+  | Const of const
   | EList of expr list
   | Ident of ident
   | Bop of expr * ident * expr
   | Ap of expr * expr
 
 type pattern =
+  | PConst of const
   | PIdent of ident
   | PWild (* wildcard, '_' *)
   | PCons of pattern * pattern
-  | PList (* specifically [] *)
+  | PList of pattern list
 
 type term =
   | TExpr of expr
@@ -95,39 +99,53 @@ let rec pp_ty out (ty' : ty) =
       out
       "(@[<hov>%s@ %a@])"
       c
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_ty) ts)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_ty)
+      ts
   | Tuple ts ->
     Format.fprintf
       out
       "(@[<hov>%a@])"
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_ty) ts)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_ty)
+      ts
   | Prim p -> pp_prim out p
+;;
+
+let pp_const out (c : const) =
+  match c with
+  | Int i -> Format.fprintf out "%d" i
+  | Float f -> Format.fprintf out "%.5f" f
+  | String s -> Format.fprintf out "%s\"" s
+  | Char c' -> Format.fprintf out "'%c'" c'
+  | Bool b -> Format.fprintf out "%b" b
+  | Atom a -> Format.fprintf out "%@%s" a
+  | Unit -> Format.fprintf out "()"
 ;;
 
 let rec pp_expr out (e : expr) =
   match e with
+  | Const c -> pp_const out c
   | Ident i -> pp_ident out i
-  | Int i -> Format.fprintf out "%d" i
-  | Float f -> Format.fprintf out "%.5f" f
-  | String s -> Format.fprintf out "\"%s\"" s
-  | Char c' -> Format.fprintf out "'%c'" c'
-  | Bool b -> Format.fprintf out "%b" b
-  | Atom a -> Format.fprintf out "%s" a
-  | Unit -> Format.fprintf out "()"
   | EList l ->
     Format.fprintf
       out
       "[@[<hov>%a@]]"
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr) l)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
+      l
   | Ap (f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) -> Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
 ;;
 
 let rec pp_pattern out (arg : pattern) =
   match arg with
+  | PConst c -> pp_const out c
   | PIdent i -> pp_ident out i
   | PWild -> Format.fprintf out "_"
-  | PList -> Format.fprintf out "[]"
+  | PList ps ->
+    Format.fprintf
+      out
+      "[@[<hov>%a@]]"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
+      ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
 ;;
 
@@ -138,14 +156,17 @@ let rec pp_term out (t : term) =
     Format.fprintf
       out
       "(@[<hov>%a@])"
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr) t)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
+      t
   | TLet (i, ty, v) ->
     Format.fprintf
       out
       "(@[<hov>%s@ %a@ %a@])"
       i
-      (Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_ty) ty)
-      (pp_term v)
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_ty)
+      ty
+      pp_term
+      v
   | TGrouping body ->
     Format.fprintf
       out
@@ -156,16 +177,20 @@ let rec pp_term out (t : term) =
     Format.fprintf
       out
       "(if @[<v>%a@,%a@,%a@])"
-      (pp_expr cond)
-      (pp_term tbranch)
-      (Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_term)
-         fbranch)
+      pp_expr
+      cond
+      pp_term
+      tbranch
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_term)
+      fbranch
   | TLam (args, body) ->
     Format.fprintf
       out
       "(lam @[<v>(%a) %a@])"
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern) args)
-      (pp_term body)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern)
+      args
+      pp_term
+      body
 ;;
 
 let pp_import_cond out (cond : import_cond) =
@@ -189,7 +214,8 @@ let pp_import out ((mod_name, cond) : import) =
     out
     "(import %s @[<hov>%a@])"
     mod_name
-    (Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond) cond)
+    Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
+    cond
 ;;
 
 let pp_when_block out (when_block : term option) =
@@ -210,16 +236,21 @@ let rec pp_definition out (def : definition) =
       out
       "(dec %s @[<hov>%a@])"
       f
-      (Format.(pp_print_list ~pp_sep:pp_print_space pp_ty) ts)
+      Format.(pp_print_list ~pp_sep:pp_print_space pp_ty)
+      ts
   | Def (f, args, when_block, body, with_block) ->
     Format.fprintf
       out
       "(de@[<v>f %s (%a)@,%a@,%a@,%a@])"
       f
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern) args)
-      (pp_when_block when_block)
-      (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_term) body)
-      (pp_with_block with_block)
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern)
+      args
+      pp_when_block
+      when_block
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_term)
+      body
+      pp_with_block
+      with_block
 
 and pp_with_block out (with_block : with_block option) =
   Format.fprintf
@@ -244,6 +275,8 @@ let pp_program out ((prog_name, prog_body) : program) =
   Format.fprintf
     out
     "%a@.@.%a@."
-    (pp_module prog_name)
-    (Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_top_lvl) prog_body)
+    pp_module
+    prog_name
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_top_lvl)
+    prog_body
 ;;

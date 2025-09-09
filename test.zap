@@ -20,6 +20,6 @@ def filter p (x :: xs) :=
 
 dec getLast : ['a] -> 'a.
 def getLast [] := fail "empty list";
-def getLast [] := x;
+def getLast [x] := x;
 def getLast (_ :: xs) := getLast xs
 ;;

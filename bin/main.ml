@@ -9,19 +9,20 @@ let border () =
 
 let () =
   let _ =
-    "@module Syntax\n\
-     @import Std\n\
-     dec func : int -> int.\n\
-     def func num :=\n\
-    \  let inc := num + 1 in\n\
-    \  num + 2\n\
-     ;;"
+    "def map := go\n\
+    \      with\n\
+    \        % you can omit the dec for functions/variables in with-blocks\n\
+    \        def go _ [] := [];\n\
+    \        def bruh f (x :: xs) := f x :: go f xs\n\
+    \        ;;\n\
+    \    ;;\n\
+    \  "
   in
-  (* let input = "\"empty list\"" in *)
-  let input = In_channel.(open_text "test.zap" |> input_all) in
+  let input = "def map := (::) 3 [1; 2; 3] ;;" in
+  (* let input = In_channel.(open_text "syntax.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in
-  let res = Parser.parse_program l in
+  let res = Parser.parse_definition l in
   border ();
-  Ast.pp_program Format.std_formatter res
+  Ast.pp_definition Format.std_formatter res
 ;;

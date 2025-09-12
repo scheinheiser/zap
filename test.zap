@@ -23,16 +23,10 @@ def multiArgs one two three :=
   3 * 2 + 10
 ;;
 
-dec filter : 'a -> bool -> ['a] -> ['a].
-def filter p (x :: xs) :=
+% let-binding function
+dec lamTest : int -> bool.
+def lamTest num :=
+  % you can have let-bindings act as functions through the use of lambdas
   let test_lambda : int -> string = lam n -> show n in
-  if p x
-  then x :: filter p xs
-  else filter p xs
-;;
-
-dec getLast : ['a] -> 'a.
-def getLast [] := fail "empty list";
-def getLast [x] := x;
-def getLast (_ :: xs) := getLast xs
+  (length (test_lambda num) > 10)
 ;;

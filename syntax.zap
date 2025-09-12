@@ -71,8 +71,8 @@ def map := go
 dec lamTest : int -> bool.
 def lamTest num :=
   % you can have let-bindings act as functions through the use of lambdas
-  let test_lambda : int -> string = lam n -> show n
-  % length (test_lambda num) > 10
+  let test_lambda : int -> string = lam n -> show n in
+  length (test_lambda num) > 10
 ;;
 
 dec sayHello : string -> ().
@@ -87,7 +87,7 @@ def sayHello name :=
 
 % partial application
 dec addOne : int -> int.
-def addOne := (+) 1
+def addOne := op+ 1
 ;;
 
 % atoms

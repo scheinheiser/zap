@@ -146,7 +146,8 @@ module Parser = struct
 
   let get_bp (t : Token.token) : int =
     match t with
-    | LPAREN | RPAREN -> 0
+    | LPAREN | RPAREN ->
+      1 (* we give this a slight bit of precedence for cases like `length (show 10)` *)
     | NE | EQ -> 2
     | AND | OR -> 3
     | LT | GT | LTE | GTE -> 4
@@ -236,16 +237,19 @@ module Parser = struct
       Lexer.consume l RBRACK "Expected ']' to end list.";
       Ast.EList es
     | _, LPAREN ->
-      let _, next = Lexer.peek l in
-      let e =
-        match next with
-        | o when is_op o ->
-          Lexer.skip l ~am:1;
-          Ast.Ident (op_to_string next)
-        | _ -> parse_expr l 0
-      in
+      let e = parse_expr l 0 in
       Lexer.consume l RPAREN "Expected ')' to end grouped expression or prefix operator.";
       e
+    | _, KOP ->
+      let pos, next = Lexer.advance l in
+      (match next with
+       | o when is_op o -> Ast.Ident (op_to_string o)
+       | op ->
+         Error.report_err
+           ( Some pos
+           , Printf.sprintf
+               "Expected operator to follow 'op' keyword, but got '%s'."
+               (Token.show op) ))
     | pos, tok ->
       Error.report_err
         ( Some pos
@@ -358,9 +362,19 @@ module Parser = struct
       Ast.TGrouping terms
     | _, LPAREN ->
       Lexer.skip ~am:1 l;
-      let contents = Lexer.separated_list l COMMA (Fun.flip parse_expr 0) in
-      Lexer.consume l RPAREN "Expected ')' to end tuple term.";
-      Ast.TTup contents
+      let first = parse_expr l 0 in
+      (match Lexer.current l with
+       | _, RPAREN ->
+         Lexer.skip ~am:1 l;
+         Ast.TExpr first
+       | _, COMMA ->
+         Lexer.skip ~am:1 l;
+         let contents = Lexer.separated_list l COMMA (Fun.flip parse_expr 0) in
+         Lexer.consume l RPAREN "Expected ')' to end tuple term.";
+         Ast.TTup contents
+       | pos, tok ->
+         Error.report_err
+           (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok)))
     | _, IF ->
       Lexer.skip ~am:1 l;
       let cond = parse_expr l 0 in

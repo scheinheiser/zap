@@ -48,6 +48,7 @@
     ("def", DEF);
     ("type", TYPE);
     ("lam", LAM);
+    ("op", KOP);
   ]
 
   let builtin_symbol = [

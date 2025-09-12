@@ -11,6 +11,7 @@ type token =
   | IDENT of string
   | UPPER_IDENT of string
   | OP of string
+  | KOP
   | WHEN
   | WITH
   | WITHOUT
@@ -85,6 +86,7 @@ let show (t : token) : string =
   | IDENT i -> sprintf "IDENT %s" i
   | UPPER_IDENT i -> sprintf "UPPER_IDENT %s" i
   | OP o -> sprintf "OP %s" o
+  | KOP -> sprintf "KOP"
   | WHEN -> sprintf "WHEN"
   | WITH -> sprintf "WITH"
   | WITHOUT -> sprintf "WITHOUT"

@@ -124,7 +124,7 @@ let pp_const out (c : const) =
   match c with
   | Int i -> Format.fprintf out "%d" i
   | Float f -> Format.fprintf out "%.5f" f
-  | String s -> Format.fprintf out "%s\"" s
+  | String s -> Format.fprintf out "\"%s\"" s
   | Char c' -> Format.fprintf out "'%c'" c'
   | Bool b -> Format.fprintf out "%b" b
   | Atom a -> Format.fprintf out "%@%s" a
@@ -253,7 +253,15 @@ let pp_tdecl_type out (t : tdecl_type) =
 ;;
 
 let pp_ty_decl out ((i, t) : ty_decl) =
-  Format.fprintf out "(ty@[<v>pe@ %s@ %a@])" i pp_tdecl_type t
+  match t with
+  | Alias _ ->
+    Format.fprintf
+      out
+      "(ty@[<v>pe %s %a@])"
+      i
+      pp_tdecl_type
+      t (* it looks nicer on a single line *)
+  | _ -> Format.fprintf out "(ty@[<v>pe %s@,%a@])" i pp_tdecl_type t
 ;;
 
 let pp_when_block out (when_block : term option) =

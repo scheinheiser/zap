@@ -22,6 +22,7 @@ type ty =
   | Constructor of tname * ty list
   | Tuple of ty list
   | Prim of prim
+  | Udt of tname (* user defined type *)
 
 type const =
   | Int of int
@@ -60,6 +61,13 @@ type import_cond =
 
 type import = module_name * import_cond option
 
+type ty_decl = ident * tdecl_type
+
+and tdecl_type =
+  | Alias of ty
+  | Variant of (ident * ty option) list
+  | Record of (ident * ty) list
+
 type definition =
   | Dec of func * ty list
   | Def of func * pattern list * term option * term list * with_block option
@@ -69,9 +77,10 @@ and with_block = definition list
 
 type top_lvl =
   | TDef of definition
+  | TTyDecl of ty_decl
   | TImport of import
 
-type program = module_name * top_lvl list
+type program = module_name * import list * ty_decl list * definition list
 
 (* Pretty printing *)
 let pp_ident out (i : ident) = Format.fprintf out "%s" i
@@ -108,6 +117,7 @@ let rec pp_ty out (ty' : ty) =
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_ty)
       ts
   | Prim p -> pp_prim out p
+  | Udt t -> pp_ident out t
 ;;
 
 let pp_const out (c : const) =
@@ -218,6 +228,34 @@ let pp_import out ((mod_name, cond) : import) =
     cond
 ;;
 
+(* type ty_decl = ident * tdecl_type *)
+let pp_tdecl_type out (t : tdecl_type) =
+  match t with
+  | Alias t -> pp_ty out t
+  | Record r ->
+    let pp_field out ((i, t) : ident * ty) = Format.fprintf out "(%s %a)" i pp_ty t in
+    Format.fprintf
+      out
+      "(re@[<v>cord@,%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
+      r
+  | Variant v ->
+    let pp_field out ((i, t) : ident * ty option) =
+      match t with
+      | Some t' -> Format.fprintf out "(%s %a)" i pp_ty t'
+      | None -> Format.fprintf out "%s" i
+    in
+    Format.fprintf
+      out
+      "(va@[<v>riant@,%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
+      v
+;;
+
+let pp_ty_decl out ((i, t) : ty_decl) =
+  Format.fprintf out "(ty@[<v>pe@ %s@ %a@])" i pp_tdecl_type t
+;;
+
 let pp_when_block out (when_block : term option) =
   Format.fprintf
     out
@@ -263,20 +301,18 @@ and pp_with_block out (with_block : with_block option) =
     with_block
 ;;
 
-let pp_top_lvl out (top : top_lvl) =
-  match top with
-  | TDef def -> pp_definition out def
-  | TImport imp -> pp_import out imp
-;;
-
 let pp_module out (mod_name : module_name) = Format.fprintf out "(module %s)" mod_name
 
-let pp_program out ((prog_name, prog_body) : program) =
+let pp_program out ((prog_name, imports, types, body) : program) =
   Format.fprintf
     out
-    "%a@.@.%a@."
+    "%a@.@.%a@.@.%a@.@.%a@."
     pp_module
     prog_name
-    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_top_lvl)
-    prog_body
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_import)
+    imports
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_ty_decl)
+    types
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_definition)
+    body
 ;;

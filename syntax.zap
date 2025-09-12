@@ -12,6 +12,19 @@
 @import Std without (filter, map)
 % @import Data.List with (filter, map)
 
+type myAlias := int
+
+type myVariant :=
+  | Variant1 ~ int
+  | Variant2 ~ string
+
+type myRecord :=
+  { field1 ~ int
+  ; field2 ~ string
+  ; aliasField ~ myAlias
+  ; variantField ~ myVariant
+  }
+
 dec filter : ('a -> bool) -> ['a] -> ['a].
 def filter _ [] := [];
 def filter p (x :: xs) :=

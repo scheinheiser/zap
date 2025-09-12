@@ -1,6 +1,19 @@
 @module Testing
 @import Bruh with (filter, Hi, Sup)
 
+type myAlias := int
+
+type myVariant :=
+  | Variant1 ~ int
+  | Variant2 ~ string
+
+type myRecord :=
+  { field1 ~ int
+  ; field2 ~ string
+  ; aliasField ~ myAlias
+  ; variantField ~ myVariant
+  }
+
 dec multiArgs : int -> string -> () -> bool.
 def multiArgs one two three :=
   print one in

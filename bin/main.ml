@@ -1,4 +1,3 @@
-(* open Lexing *)
 open Language
 open Parser
 
@@ -18,11 +17,11 @@ let () =
     \    ;;\n\
     \  "
   in
-  let input = "def map := (::) 3 [1; 2; 3] ;;" in
-  (* let input = In_channel.(open_text "syntax.zap" |> input_all) in *)
+  (* let input = "type myType := {fieldOne: int; fieldTwo: int -> string}" in *)
+  let input = In_channel.(open_text "test.zap" |> input_all) in
   print_endline input;
   let l = Lexer.of_string input in
-  let res = Parser.parse_definition l in
+  let res = Parser.parse_program l in
   border ();
-  Ast.pp_definition Format.std_formatter res
+  Ast.pp_program Format.std_formatter res
 ;;

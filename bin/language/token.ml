@@ -18,6 +18,8 @@ type token =
   | THEN
   | ELSE
   | DEC
+  | TYPE
+  | TILDE
   | DEF
   | LAM
   | LET
@@ -37,6 +39,7 @@ type token =
   | DIV
   | MUL
   | CONS
+  | PIPE
   | LBRACE
   | RBRACE
   | LPAREN
@@ -89,6 +92,8 @@ let show (t : token) : string =
   | THEN -> sprintf "THEN"
   | ELSE -> sprintf "ELSE"
   | DEC -> sprintf "DEC"
+  | TYPE -> sprintf "TYPE"
+  | TILDE -> sprintf "TILDE"
   | DEF -> sprintf "DEF"
   | LAM -> sprintf "LAM"
   | LET -> sprintf "LET"
@@ -108,6 +113,7 @@ let show (t : token) : string =
   | DIV -> sprintf "DIV"
   | MUL -> sprintf "MUL"
   | CONS -> sprintf "CONS"
+  | PIPE -> sprintf "PIPE"
   | LBRACE -> sprintf "LBRACE"
   | RBRACE -> sprintf "RBRACE"
   | LPAREN -> sprintf "LPAREN"

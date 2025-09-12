@@ -46,10 +46,11 @@
     ("when", WHEN);
     ("dec", DEC);
     ("def", DEF);
+    ("type", TYPE);
     ("lam", LAM);
   ]
 
-  let builtin_op = [
+  let builtin_symbol = [
     ("+", PLUS);
     ("-", MINUS);
     ("*", MUL);
@@ -66,6 +67,8 @@
     ("::", CONS);
     ("->", ARROW);
     ("@", ATSIGN);
+    ("~", TILDE);
+    ("|", PIPE);
   ]
 }
 
@@ -104,7 +107,7 @@ rule token = parse
   | '_'         {with_pos lexbuf WILDCARD}
   | op+ as op'
     {
-    let tok = match (List.assoc_opt op' builtin_op) with
+    let tok = match (List.assoc_opt op' builtin_symbol) with
               | (Some op'') -> op''
               | None -> OP op'
     in with_pos lexbuf tok}

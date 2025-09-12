@@ -181,6 +181,7 @@ module Parser = struct
   let rec parse_ty (l : Lexer.t) : Ast.ty =
     match Lexer.advance l with
     | _, TY_PRIM t -> parse_arrow l (Ast.Prim t)
+    | _, IDENT i -> parse_arrow l (Ast.Udt i)
     | _, LBRACK ->
       let ty = parse_ty l in
       Lexer.consume l RBRACK "Expected ']' to end list.";
@@ -448,6 +449,42 @@ module Parser = struct
     Ast.Dec (n, ts)
   ;;
 
+  let rec parse_tydecl (l : Lexer.t) : Ast.ty_decl =
+    Lexer.consume l TYPE "Expected 'type' keyword before type declaration.";
+    let ident = parse_ident l in
+    Lexer.consume l ASSIGNMENT "Expected ':=' after type identifier.";
+    let ty = parse_tydecl_type l in
+    ident, ty
+
+  and parse_tydecl_type (l : Lexer.t) : Ast.tdecl_type =
+    match Lexer.current l with
+    | _, LBRACE ->
+      Lexer.skip ~am:1 l;
+      let parse_field lex =
+        let i = parse_ident lex in
+        Lexer.consume l TILDE "Expected '~' after field name.";
+        let t = parse_ty lex in
+        i, t
+      in
+      let fields = Lexer.separated_list l SEMI parse_field in
+      Lexer.consume l RBRACE "Expected '}' after field declaration in records.";
+      Ast.Record fields
+    | _, PIPE ->
+      Lexer.skip ~am:1 l;
+      let parse_variant lex =
+        let i = parse_upper_ident lex in
+        match Lexer.current lex with
+        | _, TILDE ->
+          Lexer.skip ~am:1 lex;
+          let t = parse_ty lex in
+          i, Some t
+        | _ -> i, None
+      in
+      let fields = Lexer.separated_list l PIPE parse_variant in
+      Ast.Variant fields
+    | _ -> Ast.Alias (parse_ty l)
+  ;;
+
   let parse_module (l : Lexer.t) : Ast.module_name =
     Lexer.consume l ATSIGN "Expected an '@' before 'module' keyword.";
     Lexer.consume l MODULE "Expected the 'module' keyword.";
@@ -504,6 +541,7 @@ module Parser = struct
     | _, ATSIGN -> Ast.TImport (parse_import l)
     | _, DEC -> Ast.TDef (parse_dec l)
     | _, DEF -> Ast.TDef (parse_def l)
+    | _, TYPE -> Ast.TTyDecl (parse_tydecl l)
     | pos, tok ->
       Error.report_err
         ( Some pos
@@ -515,6 +553,27 @@ module Parser = struct
   let parse_program (l : Lexer.t) : Ast.program =
     let mod' = parse_module l in
     let prog = Lexer.list_with_end l (( = ) EOF) parse_toplvl in
-    mod', prog
+    let imports =
+      List.filter_map
+        (function
+          | Ast.TImport i -> Some i
+          | _ -> None)
+        prog
+    in
+    let tydecls =
+      List.filter_map
+        (function
+          | Ast.TTyDecl t -> Some t
+          | _ -> None)
+        prog
+    in
+    let body =
+      List.filter_map
+        (function
+          | Ast.TDef d -> Some d
+          | _ -> None)
+        prog
+    in
+    mod', imports, tydecls, body
   ;;
 end

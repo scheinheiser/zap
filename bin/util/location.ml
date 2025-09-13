@@ -35,3 +35,9 @@ let of_lexbuf (lexbuf : Lexing.lexbuf) : t =
 let make fn sl el sc ec : t =
   { filename = fn; start_line = sl; end_line = el; start_col = sc; end_col = ec }
 ;;
+
+let combine (l : t) (r : t) : t =
+  let { filename; start_line; end_line = _; start_col; end_col = _ } = l
+  and { filename = _; start_line = _; end_line; start_col = _; end_col } = r in
+  { filename; start_line; end_line; start_col; end_col }
+;;

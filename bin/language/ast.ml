@@ -1,3 +1,4 @@
+open Util
 (* made with occasional referencing of https://github.com/camllight/camllight/blob/master/sources/src/compiler/syntax.ml *)
 
 (* Type definitions *)
@@ -16,15 +17,19 @@ type prim =
   | PUnit
   | PGeneric of string
 
-type ty =
-  | Arrow of ty * ty
-  | List of ty
-  | Constructor of tname * ty list
-  | Tuple of ty list
+type located_ty = Location.t * ty
+
+and ty =
+  | Arrow of located_ty * located_ty
+  | List of located_ty
+  | Constructor of tname * located_ty list
+  | Tuple of located_ty list
   | Prim of prim
   | Udt of tname (* user defined type *)
 
-type const =
+type located_const = Location.t * const
+
+and const =
   | Int of int
   | Float of float
   | String of string
@@ -33,55 +38,71 @@ type const =
   | Atom of ident
   | Unit
 
-type expr =
-  | Const of const
-  | EList of expr list
-  | Ident of ident
-  | Bop of expr * ident * expr
-  | Ap of expr * expr
+type located_expr = Location.t * expr
 
-type pattern =
-  | PConst of const
+and expr =
+  | Const of located_const
+  | EList of located_expr list
+  | Ident of ident
+  | Bop of located_expr * ident * located_expr
+  | Ap of located_expr * located_expr
+
+type located_pattern = Location.t * pattern
+
+and pattern =
+  | PConst of located_const
   | PIdent of ident
   | PWild (* wildcard, '_' *)
-  | PCons of pattern * pattern
-  | PList of pattern list
-  | PTup  of pattern list
+  | PCons of located_pattern * located_pattern
+  | PList of located_pattern list
+  | PTup of located_pattern list
 
-type term =
-  | TExpr of expr
-  | TLet of ident * ty option * term
-  | TGrouping of term list
-  | TIf of expr * term * term option
-  | TTup of expr list
-  | TLam of pattern list * term
+type located_term = Location.t * term
+
+and term =
+  | TExpr of located_expr
+  | TLet of ident * located_ty option * located_term
+  | TGrouping of located_term list
+  | TIf of located_expr * located_term * located_term option
+  | TTup of located_expr list
+  | TLam of located_pattern list * located_term
 
 type import_cond =
   | CWith of ident list
   | CWithout of ident list
 
-type import = module_name * import_cond option
+type located_import = Location.t * import
+and import = module_name * import_cond option
 
-type ty_decl = ident * tdecl_type
+type located_ty_decl = Location.t * ty_decl
+and ty_decl = ident * tdecl_type
 
 and tdecl_type =
-  | Alias of ty
-  | Variant of (ident * ty option) list
-  | Record of (ident * ty) list
+  | Alias of located_ty
+  | Variant of (ident * located_ty option) list
+  | Record of (ident * located_ty) list
 
-type definition =
-  | Dec of func * ty list
-  | Def of func * pattern list * term option * term list * with_block option
+type located_definition = Location.t * definition
+
+and definition =
+  | Dec of func * located_ty list
+  | Def of
+      func
+      * located_pattern list
+      * located_term option
+      * located_term list
+      * with_block option
 (* identifer, args, optional when-block, body, optional with-block *)
 
-and with_block = definition list
+and with_block = located_definition list
 
 type top_lvl =
-  | TDef of definition
-  | TTyDecl of ty_decl
-  | TImport of import
+  | TDef of located_definition
+  | TTyDecl of located_ty_decl
+  | TImport of located_import
 
-type program = module_name * import list * ty_decl list * definition list
+type program =
+  module_name * located_import list * located_ty_decl list * located_definition list
 
 (* Pretty printing *)
 let pp_ident out (i : ident) = Format.fprintf out "%s" i
@@ -100,7 +121,7 @@ let pp_prim out (t : prim) =
   Format.fprintf out "%s" (of_prim t)
 ;;
 
-let rec pp_ty out (ty' : ty) =
+let rec pp_ty out ((_, ty') : located_ty) =
   match ty' with
   | Arrow (l, r) -> Format.fprintf out "(@[<hov>->@ %a@ %a@])" pp_ty l pp_ty r
   | List t -> Format.fprintf out "[%a]" pp_ty t
@@ -121,7 +142,7 @@ let rec pp_ty out (ty' : ty) =
   | Udt t -> pp_ident out t
 ;;
 
-let pp_const out (c : const) =
+let pp_const out ((_, c) : located_const) =
   match c with
   | Int i -> Format.fprintf out "%d" i
   | Float f -> Format.fprintf out "%.5f" f
@@ -132,7 +153,7 @@ let pp_const out (c : const) =
   | Unit -> Format.fprintf out "()"
 ;;
 
-let rec pp_expr out (e : expr) =
+let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
   | Ident i -> pp_ident out i
@@ -146,7 +167,7 @@ let rec pp_expr out (e : expr) =
   | Bop (l, op, r) -> Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
 ;;
 
-let rec pp_pattern out (arg : pattern) =
+let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
   | PIdent i -> pp_ident out i
@@ -166,7 +187,7 @@ let rec pp_pattern out (arg : pattern) =
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
 ;;
 
-let rec pp_term out (t : term) =
+let rec pp_term out ((_, t) : located_term) =
   match t with
   | TExpr e -> pp_expr out e
   | TTup t ->
@@ -226,7 +247,7 @@ let pp_import_cond out (cond : import_cond) =
       excludes
 ;;
 
-let pp_import out ((mod_name, cond) : import) =
+let pp_import out ((_, (mod_name, cond)) : located_import) =
   Format.fprintf
     out
     "(import %s @[<hov>%a@])"
@@ -235,19 +256,20 @@ let pp_import out ((mod_name, cond) : import) =
     cond
 ;;
 
-(* type ty_decl = ident * tdecl_type *)
 let pp_tdecl_type out (t : tdecl_type) =
   match t with
   | Alias t -> pp_ty out t
   | Record r ->
-    let pp_field out ((i, t) : ident * ty) = Format.fprintf out "(%s %a)" i pp_ty t in
+    let pp_field out ((i, t) : ident * located_ty) =
+      Format.fprintf out "(%s %a)" i pp_ty t
+    in
     Format.fprintf
       out
       "(re@[<v>cord@,%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant v ->
-    let pp_field out ((i, t) : ident * ty option) =
+    let pp_field out ((i, t) : ident * located_ty option) =
       match t with
       | Some t' -> Format.fprintf out "(%s %a)" i pp_ty t'
       | None -> Format.fprintf out "%s" i
@@ -259,7 +281,7 @@ let pp_tdecl_type out (t : tdecl_type) =
       v
 ;;
 
-let pp_ty_decl out ((i, t) : ty_decl) =
+let pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   match t with
   | Alias _ ->
     Format.fprintf
@@ -271,7 +293,7 @@ let pp_ty_decl out ((i, t) : ty_decl) =
   | _ -> Format.fprintf out "(ty@[<v>pe %s@,%a@])" i pp_tdecl_type t
 ;;
 
-let pp_when_block out (when_block : term option) =
+let pp_when_block out (when_block : located_term option) =
   Format.fprintf
     out
     "%a"
@@ -282,7 +304,7 @@ let pp_when_block out (when_block : term option) =
     when_block
 ;;
 
-let rec pp_definition out (def : definition) =
+let rec pp_definition out ((_, def) : located_definition) =
   match def with
   | Dec (f, ts) ->
     Format.fprintf

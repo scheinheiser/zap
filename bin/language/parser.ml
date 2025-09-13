@@ -313,10 +313,21 @@ module Parser = struct
       Ast.PList contents
     | _, LPAREN ->
       let l' = parse_pattern l in
-      Lexer.consume l CONS "Expected '::' in list cons pattern.";
-      let r = parse_pattern l in
-      Lexer.consume l RPAREN "Expected ')' to end list cons pattern.";
-      Ast.PCons (l', r)
+      (match Lexer.current l with
+      | _, CONS ->
+        Lexer.skip ~am:1 l;
+        let r = parse_pattern l in
+        Lexer.consume l RPAREN "Expected ')' to end list cons pattern.";
+        Ast.PCons (l', r)
+      | _, COMMA ->
+        Lexer.skip ~am:1 l;
+        let rest = Lexer.separated_list l COMMA parse_pattern in
+        Lexer.consume l RPAREN "Expected ')' to end tuple pattern.";
+        Ast.PTup (l' :: rest)
+      | _, RPAREN ->
+        Lexer.skip ~am:1 l;
+        l'
+      | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected tuple pattern, cons pattern or a pattern, but got '%s'." (Token.show tok)))
     | _, IDENT i -> Ast.PIdent i
     | _, INT i -> Ast.PConst (Ast.Int i)
     | _, FLOAT i -> Ast.PConst (Ast.Float i)
@@ -369,9 +380,9 @@ module Parser = struct
          Ast.TExpr first
        | _, COMMA ->
          Lexer.skip ~am:1 l;
-         let contents = Lexer.separated_list l COMMA (Fun.flip parse_expr 0) in
+         let rest = Lexer.separated_list l COMMA (Fun.flip parse_expr 0) in
          Lexer.consume l RPAREN "Expected ')' to end tuple term.";
-         Ast.TTup contents
+         Ast.TTup (first :: rest)
        | pos, tok ->
          Error.report_err
            (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok)))

@@ -18,7 +18,7 @@ let () =
     \  "
   in
   (* let input = "length (test_lambda 10)" in *)
-  let input = In_channel.(open_text "syntax.zap" |> input_all) in
+  let input = In_channel.(open_text "test.zap" |> input_all) in
   print_endline input;
   let l = Lexer.of_string input in
   let res = Parser.parse_program l in

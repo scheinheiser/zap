@@ -46,6 +46,7 @@ type pattern =
   | PWild (* wildcard, '_' *)
   | PCons of pattern * pattern
   | PList of pattern list
+  | PTup  of pattern list
 
 type term =
   | TExpr of expr
@@ -155,6 +156,12 @@ let rec pp_pattern out (arg : pattern) =
       out
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
+      ps
+  | PTup ps ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
       ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
 ;;

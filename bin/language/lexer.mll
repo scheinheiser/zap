@@ -107,14 +107,13 @@ rule token = parse
   | ','         {with_pos lexbuf COMMA}
   | '_'         {with_pos lexbuf WILDCARD}
   | op+ as op'
-    {
-    let tok = match (List.assoc_opt op' builtin_symbol) with
+    {let tok = match (List.assoc_opt op' builtin_symbol) with
               | (Some op'') -> op''
-              | None -> OP op'
-    in with_pos lexbuf tok}
+              | None        -> OP op'
+     in with_pos lexbuf tok}
   | ident as i
     {let tok = match (List.assoc_opt i keywords) with
-                | (Some t) -> t
+                | (Some t)               -> t
                 | None when is_generic i -> TY_PRIM (Ast.PGeneric i)
                 | None when is_upper i   -> UPPER_IDENT i
                 | None                   -> IDENT i

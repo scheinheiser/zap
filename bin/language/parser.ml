@@ -201,9 +201,35 @@ module Parser = struct
       let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
       parse_arrow l (Location.combine s e, Ast.List ty)
     | s, LPAREN ->
-      let contents = Lexer.separated_list l COMMA parse_ty in
-      let e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple." in
-      parse_arrow l (Location.combine s e, Ast.Tuple contents)
+      let first = parse_ty l in
+      let t =
+        match Lexer.current l with
+        | _, COMMA ->
+          let contents = Lexer.separated_list l COMMA parse_ty in
+          let e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple." in
+          parse_arrow l (Location.combine s e, Ast.Tuple contents)
+        | _, ARROW ->
+          Lexer.skip ~am:1 l;
+          let next = parse_ty l in
+          let e =
+            Lexer.consume_with_pos l RPAREN "Expected ')' to end parenthesised type."
+          in
+          Location.combine s e, Ast.Arrow (first, next)
+        | _, RPAREN ->
+          Lexer.skip ~am:1 l;
+          first
+        | pos, tok ->
+          Error.report_err
+            ( Some pos
+            , Printf.sprintf "Expected ',', '->' or ')', but got '%s'." (Token.show tok)
+            )
+      in
+      (match Lexer.current l with
+       | e, ARROW ->
+         Lexer.skip ~am:1 l;
+         let r = parse_ty l in
+         Location.combine s e, Ast.Arrow (t, r)
+       | _ -> t)
     | pos, tok ->
       Error.report_err
         ( Some pos
@@ -282,20 +308,20 @@ module Parser = struct
     =
     let expr =
       match op with
-      | PLUS -> Ast.Bop (left, "+", parse_expr l lbp)
-      | MINUS -> Ast.Bop (left, "-", parse_expr l lbp)
-      | MUL -> Ast.Bop (left, "*", parse_expr l lbp)
-      | DIV -> Ast.Bop (left, "/", parse_expr l lbp)
-      | CONS -> Ast.Bop (left, "::", parse_expr l lbp)
-      | NE -> Ast.Bop (left, "/=", parse_expr l lbp)
-      | EQ -> Ast.Bop (left, "=", parse_expr l lbp)
-      | LT -> Ast.Bop (left, "<", parse_expr l lbp)
-      | LTE -> Ast.Bop (left, "<=", parse_expr l lbp)
-      | GT -> Ast.Bop (left, ">", parse_expr l lbp)
-      | GTE -> Ast.Bop (left, ">=", parse_expr l lbp)
-      | AND -> Ast.Bop (left, "&&", parse_expr l lbp)
-      | OR -> Ast.Bop (left, "||", parse_expr l lbp)
-      | OP o -> Ast.Bop (left, o, parse_expr l lbp)
+      | PLUS -> Ast.Bop (left, Ast.Add, parse_expr l lbp)
+      | MINUS -> Ast.Bop (left, Ast.Sub, parse_expr l lbp)
+      | MUL -> Ast.Bop (left, Ast.Mul, parse_expr l lbp)
+      | DIV -> Ast.Bop (left, Ast.Div, parse_expr l lbp)
+      | CONS -> Ast.Bop (left, Ast.Cons, parse_expr l lbp)
+      | NE -> Ast.Bop (left, Ast.NotEq, parse_expr l lbp)
+      | EQ -> Ast.Bop (left, Ast.Equal, parse_expr l lbp)
+      | LT -> Ast.Bop (left, Ast.Less, parse_expr l lbp)
+      | LTE -> Ast.Bop (left, Ast.LessE, parse_expr l lbp)
+      | GT -> Ast.Bop (left, Ast.Greater, parse_expr l lbp)
+      | GTE -> Ast.Bop (left, Ast.GreaterE, parse_expr l lbp)
+      | AND -> Ast.Bop (left, Ast.And, parse_expr l lbp)
+      | OR -> Ast.Bop (left, Ast.Or, parse_expr l lbp)
+      | OP o -> Ast.Bop (left, Ast.User_op o, parse_expr l lbp)
       | IDENT i -> Ast.Ap (left, (s, Ast.Ident i))
       | INT i -> Ast.Ap (left, (s, Ast.Const (s, Ast.Int i)))
       | FLOAT f -> Ast.Ap (left, (s, Ast.Const (s, Ast.Float f)))
@@ -514,9 +540,9 @@ module Parser = struct
     let s = Lexer.consume_with_pos l DEC "Expected 'dec' keyword." in
     let n = parse_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
-    let ts = Lexer.list_with_end l (fun t -> t = DOT) parse_ty in
+    let t = parse_ty l in
     let e = Lexer.consume_with_pos l DOT "Expected '.' after 'dec' sig." in
-    Location.combine s e, Ast.Dec (n, ts)
+    Location.combine s e, Ast.Dec (n, t)
   ;;
 
   let rec parse_tydecl (l : Lexer.t) : Ast.located_ty_decl =

@@ -38,13 +38,29 @@ and const =
   | Atom of ident
   | Unit
 
+type binop =
+  | Add
+  | Mul
+  | Sub
+  | Div
+  | Less
+  | Greater
+  | LessE
+  | GreaterE
+  | Equal
+  | NotEq
+  | And
+  | Or
+  | Cons
+  | User_op of ident
+
 type located_expr = Location.t * expr
 
 and expr =
   | Const of located_const
   | EList of located_expr list
   | Ident of ident
-  | Bop of located_expr * ident * located_expr
+  | Bop of located_expr * binop * located_expr
   | Ap of located_expr * located_expr
 
 type located_pattern = Location.t * pattern
@@ -85,7 +101,7 @@ and tdecl_type =
 type located_definition = Location.t * definition
 
 and definition =
-  | Dec of func * located_ty list
+  | Dec of func * located_ty
   | Def of
       func
       * located_pattern list
@@ -103,6 +119,31 @@ type top_lvl =
 
 type program =
   module_name * located_import list * located_ty_decl list * located_definition list
+
+(* utils *)
+let show_prim = function
+  | PInt -> "int"
+  | PFloat -> "float"
+  | PString -> "string"
+  | PChar -> "char"
+  | PBool -> "bool"
+  | PAtom -> "atom"
+  | PUnit -> "unit"
+  | PGeneric g -> g
+;;
+
+let rec show_ty = function
+  | Arrow ((_, l), (_, r)) -> Printf.sprintf "%s -> %s" (show_ty l) (show_ty r)
+  | List (_, t) -> Printf.sprintf "[%s]" (show_ty t)
+  | Constructor (c, ts) ->
+    let ts' = List.map (fun (_, t) -> show_ty t) ts in
+    Printf.sprintf "%s %s" c (String.concat " " ts')
+  | Tuple ts ->
+    let ts' = List.map (fun (_, t) -> show_ty t) ts in
+    "(" ^ String.concat ", " ts' ^ ")"
+  | Prim p -> show_prim p
+  | Udt t -> t
+;;
 
 (* Pretty printing *)
 let pp_ident out (i : ident) = Format.fprintf out "%s" i
@@ -153,6 +194,27 @@ let pp_const out ((_, c) : located_const) =
   | Unit -> Format.fprintf out "()"
 ;;
 
+let pp_binop out (b : binop) =
+  let op =
+    match b with
+    | Add -> "+"
+    | Mul -> "*"
+    | Sub -> "-"
+    | Div -> "/"
+    | Less -> "<"
+    | Greater -> ">"
+    | LessE -> "<="
+    | GreaterE -> ">="
+    | Equal -> "="
+    | NotEq -> "/="
+    | And -> "&&"
+    | Or -> "||"
+    | Cons -> "::"
+    | User_op o -> o
+  in
+  Format.fprintf out "%s" op
+;;
+
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
@@ -164,7 +226,8 @@ let rec pp_expr out ((_, e) : located_expr) =
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
       l
   | Ap (f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
-  | Bop (l, op, r) -> Format.fprintf out "(@[<hov>%s@ %a@ %a@])" op pp_expr l pp_expr r
+  | Bop (l, op, r) ->
+    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
 ;;
 
 let rec pp_pattern out ((_, arg) : located_pattern) =
@@ -306,13 +369,7 @@ let pp_when_block out (when_block : located_term option) =
 
 let rec pp_definition out ((_, def) : located_definition) =
   match def with
-  | Dec (f, ts) ->
-    Format.fprintf
-      out
-      "(dec %s @[<hov>%a@])"
-      f
-      Format.(pp_print_list ~pp_sep:pp_print_space pp_ty)
-      ts
+  | Dec (f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_ty ts
   | Def (f, args, when_block, body, with_block) ->
     Format.fprintf
       out

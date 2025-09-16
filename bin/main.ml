@@ -15,7 +15,7 @@ let () =
     \    ;;\n\
     \  "
   in
-  let input = "let five : int = 10 + 3 + 50" in
+  let input = "let t := (0, [])" in
   (* let input = In_channel.(open_text "test.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in

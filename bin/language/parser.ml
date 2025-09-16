@@ -205,9 +205,10 @@ module Parser = struct
       let t =
         match Lexer.current l with
         | _, COMMA ->
+          Lexer.skip ~am:1 l;
           let contents = Lexer.separated_list l COMMA parse_ty in
           let e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple." in
-          parse_arrow l (Location.combine s e, Ast.Tuple contents)
+          parse_arrow l (Location.combine s e, Ast.Tuple (first :: contents))
         | _, ARROW ->
           Lexer.skip ~am:1 l;
           let next = parse_ty l in

@@ -9,6 +9,7 @@ type env =
   ; mutable tyvar_idx : int
   }
 
+(* utils *)
 let flatten_arrow (arrow : Ast.located_ty) : Ast.located_ty list =
   let rec go acc = function
     | _, Ast.Arrow (l, r) -> go (l :: acc) r
@@ -27,12 +28,20 @@ let init_func_env (env : env) (defs : Ast.definition list) : unit =
        defs
 ;;
 
+let get_var_type ({ var_env; _ } : env) (var : Ast.ident) : Ast.located_ty option =
+  List.assoc_opt var var_env
+;;
+
 let get_func_type ({ func_env; _ } : env) (func : Ast.ident) : Ast.located_ty option =
   List.assoc_opt func func_env
 ;;
 
 let var_exists ({ var_env; _ } : env) (var : Ast.ident) : bool =
   List.mem_assoc var var_env
+;;
+
+let func_exists ({ func_env; _ } : env) (func : Ast.ident) : bool =
+  List.mem_assoc func func_env
 ;;
 
 let add_var_type
@@ -44,10 +53,19 @@ let add_var_type
   env.var_env <- (var, ty) :: venv
 ;;
 
-let get_var_type ({ var_env; _ } : env) (var : Ast.ident) : Ast.located_ty option =
-  List.assoc_opt var var_env
+let add_func_type
+      ({ func_env = fenv; _ } as env : env)
+      (func : Ast.ident)
+      (ty : Ast.located_ty)
+  : unit
+  =
+  env.func_env <- (func, ty) :: fenv
 ;;
 
+let make_err (e : Error.t) : 'a Base.Or_error.t =
+  Base.Or_error.error_string @@ Error.format_err e
+
+(* main stuff *)
 let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
   let open Ast in
   let t =
@@ -80,29 +98,15 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
        env.tyvar_idx <- env.tyvar_idx + 1;
        Ok ((loc, Prim (PGeneric tyvar)), (loc, Typed_ast.EList []))
      | (((ty_loc, ht) as t), _) :: tl ->
-       let es_types =
-         List.filter_map (fun ((_, t'), _) -> if t' = ht then None else Some t') tl
-       in
-       if List.length es_types = 0
-       then Ok ((ty_loc, List t), (loc, Typed_ast.EList exprs))
-       else (
-         let wts = String.concat ", " (List.map show_ty es_types) in
-         let estr =
-           Error.format_err
-             ( Some loc
-             , Printf.sprintf "Expected type %s, but got '%s' instead." (show_ty ht) wts
-             )
-         in
-         Error (Base.Error.of_string estr)))
+       (match (List.filter_map (fun ((_, t'), _) -> if t' = ht then None else Some (show_ty t')) tl) with
+       | [] -> Ok ((ty_loc, List t), (loc, Typed_ast.EList exprs))
+       | es_types ->
+         make_err (Some loc, Printf.sprintf "Expected type %s, but got '%s' instead." (show_ty ht) (String.concat ", " es_types))))
   | Ident i ->
     (match get_var_type env i with
      | None ->
        (match get_func_type env i with
-        | None ->
-          let estr =
-            Error.format_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
-          in
-          Error (Base.Error.of_string estr)
+        | None -> make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
         | Some t -> Ok (t, (loc, Typed_ast.Ident i)))
      | Some t -> Ok (t, (loc, Typed_ast.Ident i)))
   | Ap (l, r) ->
@@ -113,18 +117,9 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
     >>= fun ((t', _) as r') ->
     let _, left_conn = List.hd (flatten_arrow t)
     and ty_loc, right_conn = List.rev (flatten_arrow t') |> List.hd in
-    if left_conn <> right_conn
-    then (
-      let estr =
-        Error.format_err
-          ( Some loc
-          , Printf.sprintf
-              "Expected type %s, but got %s."
-              (show_ty left_conn)
-              (show_ty right_conn) )
-      in
-      Error (Base.Error.of_string estr))
-    else Ok ((ty_loc, right_conn), (loc, Typed_ast.Ap (l', r')))
+    if left_conn = right_conn
+    then Ok ((ty_loc, right_conn), (loc, Typed_ast.Ap (l', r')))
+    else make_err (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty left_conn) (show_ty right_conn))
   | Bop (l, op, r) ->
     check_expr env l
     >>= fun (((_, t), _) as l') ->
@@ -133,93 +128,34 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
     (match op with
      | (Add | Mul | Div | Sub) when t = t' ->
        if t <> Prim PInt && t <> Prim PFloat
-       then (
-         let estr =
-           Error.format_err
-             ( Some loc
-             , Printf.sprintf "Expected type int or float, but got %s." (show_ty t) )
-         in
-         Error (Base.Error.of_string estr))
+       then make_err (Some loc, Printf.sprintf "Expected type int or float, but got %s." (show_ty t))
        else Ok ((ty_loc, t), (loc, Typed_ast.Bop (l', op, r')))
-     | (And | Or) when t <> Prim PBool ->
-       let estr =
-         Error.format_err
-           (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
-       in
-       Error (Base.Error.of_string estr)
-     | (And | Or) when t' <> Prim PBool ->
-       let estr =
-         Error.format_err
-           (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
-       in
-       Error (Base.Error.of_string estr)
+     | (And | Or) when t <> Prim PBool -> make_err (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
+     | (And | Or) when t' <> Prim PBool -> make_err (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
      | And | Or -> Ok ((ty_loc, t), (loc, Typed_ast.Bop (l', op, r')))
      | (Less | Greater | LessE | GreaterE | Equal | NotEq) when t = t' ->
        Ok ((ty_loc, Prim PBool), (loc, Typed_ast.Bop (l', op, r')))
      | Cons ->
        (match t' with
         | List (_, list_type) ->
-          if t <> list_type
-          then (
-            let estr =
-              Error.format_err
-                ( Some loc
-                , Printf.sprintf
-                    "Expected type %s, but got %s."
-                    (show_ty list_type)
-                    (show_ty t) )
-            in
-            Error (Base.Error.of_string estr))
-          else Ok ((ty_loc, list_type), (loc, Typed_ast.Bop (l', op, r')))
-        | Prim (PGeneric g) when String.starts_with ~prefix:"internal" g ->
+          if t = list_type
+          then Ok ((ty_loc, list_type), (loc, Typed_ast.Bop (l', op, r')))
+          else make_err (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty list_type) (show_ty t))
+        | Prim (PGeneric g) when String.starts_with ~prefix:"internal_" g ->
           Ok ((ty_loc, List (ty_loc, t)), (loc, Typed_ast.Bop (l', op, r')))
-        | err_type ->
-          let estr =
-            Error.format_err
-              ( Some loc
-              , Printf.sprintf
-                  "Expected an empty list or a list type, but got %s."
-                  (show_ty err_type) )
-          in
-          Error (Base.Error.of_string estr))
+        | err_type -> make_err ( Some loc, Printf.sprintf "Expected an empty list or a list type, but got %s." (show_ty err_type)))
      | User_op i ->
-       (match Base.Option.map ~f:flatten_arrow (get_func_type env i) with
-        | None ->
-          let estr =
-            Error.format_err (Some loc, Printf.sprintf "Undefined operator - %s." i)
-          in
-          Error (Base.Error.of_string estr)
-        | Some [ (_, lt); (_, rt); ret ] ->
-          (match () with
-           | _ when lt <> t ->
-             let estr =
-               Error.format_err
-                 ( Some loc
-                 , Printf.sprintf "Expected type %s, but got %s." (show_ty lt) (show_ty t)
-                 )
-             in
-             Error (Base.Error.of_string estr)
-           | _ when rt <> t' ->
-             let estr =
-               Error.format_err
-                 ( Some loc
-                 , Printf.sprintf
-                     "Expected type %s, but got %s."
-                     (show_ty rt)
-                     (show_ty t') )
-             in
-             Error (Base.Error.of_string estr)
-           | _ -> Ok (ret, (loc, Typed_ast.Bop (l', op, r'))))
-        | Some _ ->
-          let estr = Error.format_err (Some loc, "Expected binary operator.") in
-          Error (Base.Error.of_string estr))
-     | _ ->
-       let estr =
-         Error.format_err
-           ( Some loc
-           , Printf.sprintf "Expected type %s, but got %s." (show_ty t) (show_ty t') )
-       in
-       Error (Base.Error.of_string estr))
+       (match (get_func_type env i) with
+        | None -> make_err (Some loc, Printf.sprintf "Undefined operator - %s." i)
+        | Some ((_, esig) as fsig) ->
+          (match flatten_arrow fsig with
+          | [ (_, lt); (_, rt); ret ] ->
+            (match () with
+             | _ when lt <> t -> make_err (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty lt) (show_ty t))
+             | _ when rt <> t' -> make_err (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty rt) (show_ty t'))
+             | _ -> Ok (ret, (loc, Typed_ast.Bop (l', op, r'))))
+          | _ -> make_err (Some loc, Printf.sprintf "Expected binary operator, but got operator with signature %s." (show_ty esig))))
+     | _ -> make_err (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty t) (show_ty t')))
 ;;
 
 (*TODO: propagate internal type variable from empty list/etc*)
@@ -230,11 +166,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
   let open Base.Or_error in
   match t with
   | TExpr e -> check_expr env e >>| fun (t', e') -> t', (loc, Typed_ast.TExpr (t', e'))
-  | TLet (i, _, _) when var_exists env i ->
-    let estr =
-      Error.format_err (Some loc, Printf.sprintf "Variable already defined - '%s'." i)
-    in
-    Error (Base.Error.of_string estr)
+  | TLet (i, _, _) when var_exists env i || func_exists env i -> make_err (Some loc, Printf.sprintf "Variable already defined - '%s'." i)
   | TLet (i, typ, v) ->
     let env' = env in
     check_term env' v
@@ -242,16 +174,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
     (match typ with
      | Some (loc', typ') ->
        if typ' <> t'
-       then (
-         let estr =
-           Error.format_err
-             ( Some loc
-             , Printf.sprintf
-                 "Expected type %s, but got type %s."
-                 (show_ty typ')
-                 (show_ty t') )
-         in
-         Error (Base.Error.of_string estr))
+       then make_err (Some loc, Printf.sprintf "Expected type %s, but got type %s." (show_ty typ') (show_ty t'))
        else (
          add_var_type env i (loc', typ');
          Ok ((loc', typ'), (loc, Typed_ast.TLet (i, v'))))
@@ -271,8 +194,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
     (match cond' with
      | (_, Prim PBool), _ ->
        let env' = env in
-       let tb = check_term env' texpr in
-       tb
+       check_term env' texpr
        >>= fun (((type_loc, t'), _) as texpr') ->
        (match fexpr with
         | None -> Ok ((type_loc, t'), (loc, Typed_ast.TIf (cond', texpr', None)))
@@ -281,16 +203,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
           check_term env'' fb
           >>= fun (((_, t''), _) as fexpr') ->
           if t' <> t''
-          then (
-            let estr =
-              Error.format_err
-                ( Some loc
-                , Printf.sprintf
-                    "Expected type %s, but got type %s."
-                    (show_ty t')
-                    (show_ty t'') )
-            in
-            Error (Base.Error.of_string estr))
+          then make_err (Some loc, Printf.sprintf "Expected type %s, but got type %s." (show_ty t') (show_ty t''))
           else Ok ((type_loc, t'), (loc, Typed_ast.TIf (cond', texpr', Some fexpr'))))
      | (_, t), _ ->
        let estr =

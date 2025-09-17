@@ -15,14 +15,14 @@ let () =
     \    ;;\n\
     \  "
   in
-  let input = "let t := (0, [])" in
+  let input = "let t : int -> int -> bool = lam x y -> { let x' := x + 1 in let y' := y + 1 in x' = y'}" in
   (* let input = In_channel.(open_text "test.zap" |> input_all) in *)
   print_endline input;
   let l = Lexer.of_string input in
   let res = Parser.parse_term l in
   border ();
   (* Ast.pp_term Format.std_formatter res; *)
-  let res' = Typecheck.check_term { var_env = []; func_env = []; tyvar_idx = 0 } res in
+  let res' = Typecheck.check_term { var_env = []; func_env = [] } res in
   match res' with
   | Ok _ -> print_endline "success!"
   | Error e -> print_endline (Base.Error.to_string_hum e)

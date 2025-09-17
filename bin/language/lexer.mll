@@ -82,7 +82,7 @@ let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':
 let newline = '\n' | '\r' | "\r\n"
 let whitespace = [' ' '\t']+
 let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' ' ' '\''] | symbol | newline
-let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
+let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_' '\'']*
 
 rule token = parse
   | whitespace  {token lexbuf}

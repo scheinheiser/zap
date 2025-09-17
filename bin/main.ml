@@ -23,7 +23,8 @@ let () =
   border ();
   (* Ast.pp_term Format.std_formatter res; *)
   let res' = Typecheck.check_term { var_env = []; func_env = [] } res in
+  print_endline "checked program:";
   match res' with
-  | Ok _ -> print_endline "success!"
+  | Ok (t, _) -> Typed_ast.pp_typed_term Format.std_formatter t
   | Error e -> print_endline (Base.Error.to_string_hum e)
 ;;

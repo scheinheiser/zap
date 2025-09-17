@@ -10,9 +10,7 @@
                  pos_lnum = pos.pos_lnum + 1
       }
 
-  let with_pos (l: lexbuf) (t: token) =
-    let pos = Location.of_lexbuf l in
-    pos, t
+  let with_pos (l: lexbuf) (t: token) = Location.of_lexbuf l, t
 
   let is_generic (i: string) =
     match i.[0] with

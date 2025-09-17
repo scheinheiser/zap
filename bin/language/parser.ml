@@ -224,13 +224,7 @@ module Parser = struct
             ( Some pos
             , Printf.sprintf "Expected ',', '->' or ')', but got '%s'." (Token.show tok)
             )
-      in
-      (match Lexer.current l with
-       | e, ARROW ->
-         Lexer.skip ~am:1 l;
-         let r = parse_ty l in
-         Location.combine s e, Ast.Arrow (t, r)
-       | _ -> t)
+      in parse_arrow l t
     | pos, tok ->
       Error.report_err
         ( Some pos

@@ -162,8 +162,8 @@ let pp_prim out (t : prim) =
   Format.fprintf out "%s" (of_prim t)
 ;;
 
-let rec pp_ty out ((_, ty') : located_ty) =
-  match ty' with
+let rec pp_ty out ((_, ty) : located_ty) =
+  match ty with
   | Arrow (l, r) -> Format.fprintf out "(@[<hov>->@ %a@ %a@])" pp_ty l pp_ty r
   | List t -> Format.fprintf out "[%a]" pp_ty t
   | Constructor (c, ts) ->

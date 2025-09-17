@@ -20,7 +20,7 @@ let flatten_arrow (arrow : Ast.located_ty) : Ast.located_ty list =
 (* custom equality function for types that respects type variables *)
 let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
   let open Ast in
-  let is_internal = String.starts_with ~prefix:"internal_" in
+  let is_internal = String.starts_with ~prefix:"t_" in
   match l, r with
   | Prim (PGeneric g), _ when is_internal g -> true
   | _, Prim (PGeneric g) when is_internal g -> true
@@ -79,7 +79,7 @@ let fresh_tyvar =
   let i = ref (-1) in
   fun () ->
     incr i;
-    "internal_" ^ string_of_int !i
+    "t_" ^ string_of_int !i
 ;;
 
 (* main stuff *)
@@ -101,7 +101,7 @@ let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
 let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
   : (Ast.located_ty * env) Base.Or_error.t
   =
-  let is_internal = String.starts_with ~prefix:"internal_" in
+  let is_internal = String.starts_with ~prefix:"t_" in
   let open Ast in
   let open Base.Or_error in
   match pat with
@@ -124,14 +124,14 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
        let ty_list, env' = go [] env items in
        combine_errors ty_list
        >>= fun l' ->
-       let non_internals =
+       let non_internal =
          List.find_opt
            (function
              | _, Prim (PGeneric g) when is_internal g -> false
              | _ -> true)
            l'
        in
-       (match non_internals with
+       (match non_internal with
         | None -> Ok ((loc, Prim (PGeneric (fresh_tyvar ()))), env')
         | Some (type_loc, t) ->
           let wts =
@@ -255,7 +255,7 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
                   "Expected type %s, but got %s."
                   (show_ty list_type)
                   (show_ty t) )
-        | Prim (PGeneric g) when String.starts_with ~prefix:"internal_" g ->
+        | Prim (PGeneric g) when String.starts_with ~prefix:"t_" g ->
           Ok ((ty_loc, List (ty_loc, t)), (loc, Typed_ast.Bop (l', op, r')))
         | err_type ->
           make_err

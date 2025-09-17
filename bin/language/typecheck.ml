@@ -17,6 +17,13 @@ let flatten_arrow (arrow : Ast.located_ty) : Ast.located_ty list =
   go [] arrow
 ;;
 
+let rec build_arrow = function
+  | [] ->
+    raise
+      (Failure "Internal error - there should be at least a return type.")
+  | [ t ] -> t
+  | ((loc', _) as h') :: t -> loc', Ast.Arrow (h', build_arrow t)
+
 (* custom equality function for types that respects type variables *)
 let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
   let open Ast in
@@ -35,6 +42,8 @@ let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
 
 let ( &!= ) l r : bool = not (l &= r)
 
+let fresh_env () = {var_env = []; func_env = []}
+
 (* initialise function type environment from the definition list in `Ast.program` *)
 let init_func_env (env : env) (defs : Ast.definition list) : env =
   { env with
@@ -46,6 +55,9 @@ let init_func_env (env : env) (defs : Ast.definition list) : env =
         defs
   }
 ;;
+
+let combine_env (l: env) (r: env): env =
+  {func_env = l.func_env @ r.func_env; var_env = l.var_env @ r.var_env}
 
 let get_var_type ({ var_env; _ } : env) (var : Ast.ident) : Ast.located_ty option =
   List.assoc_opt var var_env
@@ -83,6 +95,16 @@ let fresh_tyvar =
 ;;
 
 (* main stuff *)
+let check_list ~(f : env -> 'a -> ('b * env) Base.Or_error.t) (env: env) (l: 'a list) ~(rev: bool): (('b Base.Or_error.t) list) * env =
+  let rec go acc e = function
+    | [] when rev -> List.rev acc, e
+    | [] -> acc, e
+    | h :: t ->
+      (match f e h with
+      | Ok (h', e') -> go (Ok h' :: acc) e' t
+      | Error _ as h' -> go (h' :: acc) e t)
+  in go [] env l
+
 let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
   let open Ast in
   let t =
@@ -114,14 +136,7 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
     (match l with
      | [] -> Ok ((loc, Prim (PGeneric (fresh_tyvar ()))), env)
      | items ->
-       let rec go acc e = function
-         | [] -> List.rev acc, e
-         | h :: t ->
-           (match get_pattern_type e h with
-            | Ok (h', e') -> go (Ok h' :: acc) e' t
-            | Error _ as h' -> go (h' :: acc) e t)
-       in
-       let ty_list, env' = go [] env items in
+       let ty_list, env' = check_list ~f:get_pattern_type ~rev:true env items in
        combine_errors ty_list
        >>= fun l' ->
        let non_internal =
@@ -235,7 +250,10 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
        then
          make_err
            (Some loc, Printf.sprintf "Expected type int or float, but got %s." (show_ty t))
-       else Ok ((ty_loc, t), (loc, Typed_ast.Bop (l', op, r')))
+       else 
+         (match t with
+         | Prim PFloat -> Ok ((ty_loc, Prim PFloat), (loc, Typed_ast.Bop (l', op, r')))
+         | _ -> Ok ((ty_loc, Prim PInt), (loc, Typed_ast.Bop (l', op, r'))))
      | (And | Or) when t &!= Prim PBool ->
        make_err (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
      | (And | Or) when t' &!= Prim PBool ->
@@ -327,14 +345,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
        let env' = add_var_type env i (type_loc, t') in
        Ok (((type_loc, t'), (loc, Typed_ast.TLet (i, v'))), env'))
   | TGrouping ts ->
-    let rec go acc e = function
-      | [] -> List.rev acc
-      | h :: t ->
-        (match check_term e h with
-         | Error _ as err -> go (err :: acc) e t
-         | Ok (term, e') -> go (Ok term :: acc) e' t)
-    in
-    let ts' = go [] env ts in
+    let ts', _ = check_list ~f:check_term ~rev:true env ts in
     combine_errors ts'
     >>= fun ts'' ->
     let typ, _ = List.rev ts'' |> List.hd in
@@ -371,21 +382,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
     let tup = loc, Ast.Tuple tup_types in
     Ok ((tup, (loc, Typed_ast.TTup values)), env)
   | TLam (args, body) ->
-    let rec build_arrow = function
-      | [] ->
-        raise
-          (Failure "Internal error - there should be at least a return type in `tys`.")
-      | [ t ] -> t
-      | ((loc', _) as h') :: t -> loc', Arrow (h', build_arrow t)
-    in
-    let rec go acc e = function
-      | [] -> acc, e
-      | h :: tl ->
-        (match get_pattern_type e h with
-         | Error _ as err -> go (err :: acc) e tl
-         | Ok (t, e') -> go (Ok t :: acc) e' tl)
-    in
-    let x, env' = go [] env args in
+    let x, env' = check_list ~f:get_pattern_type ~rev:false env args in
     combine_errors x
     >>= fun tys ->
     check_term env' body
@@ -393,3 +390,49 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
     let tys' = ret :: tys |> List.rev |> build_arrow in
     Ok ((tys', (loc, Typed_ast.TLam (args, body'))), env)
 ;;
+
+let rec check_def (env: env) ((loc, d) : Ast.located_definition): (Typed_ast.located_definition list * env) Base.Or_error.t =
+  let open Ast in
+  let open Base.Or_error in
+  match d with
+  | Dec _ -> raise (Failure "Internal error - no dec in check_dec.")
+  | Def (i, args, when_block, body, with_block) ->
+    let func_type = get_func_type env i in
+    let wb_res =
+      (match with_block with
+      | None -> Ok ([], env)
+      | Some ds ->
+        let ds' = List.filter_map (function _, Dec _ -> None | def -> Some def) ds in
+        let env' = init_func_env (fresh_env ()) (List.map (fun (_, d') -> d') ds) |> combine_env env in
+        let ds'', env'' = check_list ~f:check_def ~rev:true env' ds' in
+        combine_errors ds'' >>| fun defs -> (List.flatten defs, env''))
+    in
+    wb_res
+    >>= fun (with_block', e) ->
+    let args', env' = check_list ~f:get_pattern_type ~rev:false e args in
+    combine_errors args' >>= fun typed_args ->
+    let when_block' = 
+      match when_block with
+      | None -> Ok None
+      | Some wb ->
+        check_term env' wb >>= fun (((type_loc, wb_type), _) as wb'', _) ->
+        if wb_type &= Prim PBool
+        then Ok (Some wb'')
+        else make_err (Some type_loc, Printf.sprintf "Expected type bool, but got type %s." (show_ty wb_type))
+    in
+    when_block' >>= fun wb ->
+    let body', _ = check_list ~f:check_term ~rev:true env' body in
+    combine_errors body' >>= fun typed_body ->
+    let ((last_loc, last), _) = List.rev typed_body |> List.hd in
+    let ret_loc, ret = ((last_loc, last) :: typed_args) |> List.rev |> build_arrow in
+    (match func_type with
+    (*TODO: emit a warning here *)
+    | None ->
+      let env'' = add_func_type env i (ret_loc, ret) in
+      let d = (loc, (i, (ret_loc, ret), args, wb, typed_body)) in
+      Ok ((d :: with_block'), env'')
+    | Some ((_, t) as dec_ty) when t &= ret ->
+      let d = (loc, (i, dec_ty, args, wb, typed_body)) in
+      Ok ((d :: with_block'), env')
+    | Some (_, t) ->
+      make_err (Some loc, Printf.sprintf "Expected type %s, but got type %s." (show_ty t) (show_ty ret)))

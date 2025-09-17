@@ -29,16 +29,11 @@ and term =
 type located_definition = Location.t * definition
 
 and definition =
-  | Dec of func * Ast.located_ty
-  | Def of
       func
-      * Ast.located_ty list
+      * Ast.located_ty
       * Ast.located_pattern list
       * typed_term option
       * typed_term list
-      * with_block option
-
-and with_block = located_definition list
 
 type program =
   module_name
@@ -117,33 +112,18 @@ let pp_when_block out (when_block : typed_term option) =
     when_block
 ;;
 
-let rec pp_typed_definition out ((_, def) : located_definition) =
-  match def with
-  | Dec (f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f Ast.pp_ty ts
-  | Def (f, ret, args, when_block, body, with_block) ->
-    Format.fprintf
-      out
-      "(de@[<v>f %s (%a)@,(%a)@,%a@,%a@,%a@])"
-      f
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_ty)
-      ret
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_pattern)
-      args
-      pp_when_block
-      when_block
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_typed_term)
-      body
-      pp_with_block
-      with_block
-and pp_with_block out (with_block : with_block option) =
+let pp_typed_definition out ((_, (f, ret, args, when_block, body)) : located_definition) =
   Format.fprintf
     out
-    "(wi@[<v>th@,%a@])"
-    Format.(
-      pp_print_option
-        ~none:(fun out () -> fprintf out "<none>")
-        (pp_print_list ~pp_sep:pp_print_cut pp_typed_definition))
-    with_block
+    "(de@[<v>f %s (%a)@,(%a)@,%a@,%a@])"
+    f
+    Ast.pp_ty ret
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_pattern)
+    args
+    pp_when_block
+    when_block
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_typed_term)
+    body
 ;;
 
 let pp_typed_program out ((prog_name, imports, types, body) : program) =

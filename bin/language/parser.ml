@@ -85,8 +85,7 @@ module Lexer = struct
     if n < 0
     then
       raise
-        (Failure
-           "Internal error: called Language.Parser.Lexer.skip with a negative amount.")
+        (Error.InternalError "Internal error - called Lexer.skip with a negative step.")
     else (
       let rec aux t =
         if t <> 0
@@ -224,7 +223,8 @@ module Parser = struct
             ( Some pos
             , Printf.sprintf "Expected ',', '->' or ')', but got '%s'." (Token.show tok)
             )
-      in parse_arrow l t
+      in
+      parse_arrow l t
     | pos, tok ->
       Error.report_err
         ( Some pos

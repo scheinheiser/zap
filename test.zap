@@ -14,6 +14,10 @@ type myRecord :=
   ; variantField ~ myVariant
   }
 
+dec show : int -> string.
+dec length : string -> int.
+dec print : int -> ().
+
 % let-binding function
 dec lamTest : int -> bool.
 def lamTest num :=
@@ -21,6 +25,7 @@ def lamTest num :=
   length (test_lambda num) > 10
 ;;
 
+dec patTest : (int, bool, string) -> [int] -> atom -> ().
 def patTest (5, false, "hi") (10 :: rest) (five) :=
   print five
 ;;

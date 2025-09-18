@@ -29,11 +29,7 @@ and term =
 type located_definition = Location.t * definition
 
 and definition =
-      func
-      * Ast.located_ty
-      * Ast.located_pattern list
-      * typed_term option
-      * typed_term list
+  func * Ast.located_ty * Ast.located_pattern list * typed_term option * typed_term list
 
 type program =
   module_name
@@ -51,11 +47,22 @@ let rec pp_expr out ((_, e) : located_expr) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_typed_expr)
       l
-  | Ap (f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_typed_expr f pp_typed_expr arg
+  | Ap (f, arg) ->
+    Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_typed_expr f pp_typed_expr arg
   | Bop (l, op, r) ->
-    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" Ast.pp_binop op pp_typed_expr l pp_typed_expr r
+    Format.fprintf
+      out
+      "(@[<hov>%a@ %a@ %a@])"
+      Ast.pp_binop
+      op
+      pp_typed_expr
+      l
+      pp_typed_expr
+      r
+
 and pp_typed_expr out ((t, expr) : typed_expr) =
   Format.fprintf out "(%a %a)" Ast.pp_ty t pp_expr expr
+;;
 
 let rec pp_term out ((_, t) : located_term) =
   match t with
@@ -66,13 +73,7 @@ let rec pp_term out ((_, t) : located_term) =
       "(@[<hov>%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_typed_expr)
       t
-  | TLet (i, v) ->
-    Format.fprintf
-      out
-      "(@[<hov>%s@ %a@])"
-      i
-      pp_typed_term
-      v
+  | TLet (i, v) -> Format.fprintf out "(@[<hov>%s@ %a@])" i pp_typed_term v
   | TGrouping body ->
     Format.fprintf
       out
@@ -98,8 +99,7 @@ let rec pp_term out ((_, t) : located_term) =
       pp_typed_term
       body
 
-and pp_typed_term out ((_, term) : typed_term) =
-  Format.fprintf out "%a" pp_term term
+and pp_typed_term out ((_, term) : typed_term) = Format.fprintf out "%a" pp_term term
 
 let pp_when_block out (when_block : typed_term option) =
   Format.fprintf
@@ -117,7 +117,8 @@ let pp_typed_definition out ((_, (f, ret, args, when_block, body)) : located_def
     out
     "(de@[<v>f %s (%a)@,(%a)@,%a@,%a@])"
     f
-    Ast.pp_ty ret
+    Ast.pp_ty
+    ret
     Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_pattern)
     args
     pp_when_block

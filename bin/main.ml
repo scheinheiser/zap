@@ -15,15 +15,15 @@ let () =
     \    ;;\n\
     \  "
   in
-  let input = "def myfunc := if true then 3 :: [] else [2; 1];;" in
-  (* let input = In_channel.(open_text "test.zap" |> input_all) in *)
+  (* let input = "def myfunc := if true then 3 :: [] else [2; 1];;" in *)
+  let input = In_channel.(open_text "test.zap" |> input_all) in
   print_endline input;
   let l = Lexer.of_string input in
-  let res = Parser.parse_definition l in
+  let res = Parser.parse_program l in
   border ();
-  let res' = Typecheck.check_def { var_env = []; func_env = [] } res in
-  print_endline "checked program:";
-  match res' with
-  | Ok (t, _) -> Format.fprintf Format.std_formatter "%a@." Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") Typed_ast.pp_typed_definition) t
+  match Typecheck.check_program res with
+  | Ok p ->
+    (* Format.fprintf Format.std_formatter "%a@." Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") Typed_ast.pp_typed_definition) t *)
+    Typed_ast.pp_typed_program Format.std_formatter p
   | Error e -> print_endline (Base.Error.to_string_hum e)
 ;;

@@ -1,5 +1,7 @@
 type t = Location.t option * string
 
+exception InternalError of string
+
 let pp_err out ((loc, msg) : t) =
   match loc with
   | Some l -> Format.fprintf out "[ERROR] %a; %s@." Location.pp_location l msg

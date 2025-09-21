@@ -3,9 +3,9 @@
 
 type myAlias := int
 
-type myVariant :=
-  | Variant1 ~ int
-  | Variant2 ~ string
+type list :=
+  | Cons ~ 'a
+  | Nil
 
 type myRecord :=
   { field1 ~ int
@@ -14,18 +14,31 @@ type myRecord :=
   ; variantField ~ myVariant
   }
 
+% Variant1 {100}
+% myRecord {field1 = 10; field2 = "hi"; aliasField = 100; variantField = Variant2 "hi"}
+
 dec show : int -> string.
 dec length : string -> int.
-dec print : int -> ().
+dec print : string -> ().
 
 % let-binding function
 dec lamTest : int -> bool.
 def lamTest num :=
-  let test_lambda : int -> string = lam n -> show n in
+  let test_lambda : int -> string = fun n -> show n in
+  Cons 10 in
   length (test_lambda num) > 10
 ;;
 
-dec patTest : (int, bool, string) -> [int] -> atom -> ().
-def patTest (5, false, "hi") (10 :: rest) (five) :=
+dec caller : ('a -> 'b) -> 'a -> 'b.
+def caller f v := f v;;
+
+dec patTest : (int, bool, string) -> [int] -> string -> ().
+def patTest (5, false, "hi") (10 :: rest) five :=
   print five
+;;
+
+dec main : ().
+def main := 
+  let str := "hello, zap" in
+  print str
 ;;

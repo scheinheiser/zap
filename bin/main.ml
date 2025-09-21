@@ -15,12 +15,13 @@ let () =
     \    ;;\n\
     \  "
   in
-  (* let input = "def myfunc := if true then 3 :: [] else [2; 1];;" in *)
+  (* let input = "print \"hello. zap\"" in *)
   let input = In_channel.(open_text "test.zap" |> input_all) in
   print_endline input;
   let l = Lexer.of_string input in
   let res = Parser.parse_program l in
   border ();
+  (* Ast.pp_expr Format.std_formatter res *)
   match Typecheck.check_program res with
   | Ok p ->
     (* Format.fprintf Format.std_formatter "%a@." Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") Typed_ast.pp_typed_definition) t *)

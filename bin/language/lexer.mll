@@ -45,7 +45,7 @@
     ("dec", DEC);
     ("def", DEF);
     ("type", TYPE);
-    ("lam", LAM);
+    ("fun", LAM);
     ("op", KOP);
   ]
 
@@ -74,7 +74,7 @@
 let int = '-'? ['0'-'9'] ['0'-'9' '_']*
 let float = '-'? ['0'-'9']+ '.' ['0'-'9']
 
-let symbol = ['-' '+' '*' '\\' '&' '(' ')' '{' '}' '=' '|' '@' '>' '<' '%' '$' '^' '#' '!' ';' ':' '?']
+let symbol = ['-' '+' '*' '\\' '&' '(' ')' '{' '}' '=' '|' '@' '>' '<' '%' '$' '^' '#' '!' ';' ':' '?' '.' ',']
 let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':']
 
 let newline = '\n' | '\r' | "\r\n"
@@ -87,7 +87,6 @@ rule token = parse
   | newline     {next_line lexbuf; token lexbuf}
   | int as i    {with_pos lexbuf (INT (int_of_string i))}
   | float as f  {with_pos lexbuf (FLOAT (float_of_string f))}
-  | '\"' (str+ as s) '\"' {with_pos lexbuf (STRING s)}
   | '{'         {with_pos lexbuf LBRACE}
   | '}'         {with_pos lexbuf RBRACE}
   | "()"        {with_pos lexbuf (TY_PRIM Ast.PUnit)}
@@ -95,6 +94,7 @@ rule token = parse
   | ')'         {with_pos lexbuf RPAREN}
   | '['         {with_pos lexbuf LBRACK}
   | ']'         {with_pos lexbuf RBRACK}
+  | '|'         {with_pos lexbuf PIPE}
   | '%'         {skip_comment lexbuf}
   | "%{"        {skip_multiline_comment 0 lexbuf}
   | '.'         {with_pos lexbuf DOT}
@@ -117,18 +117,17 @@ rule token = parse
                 | None                   -> IDENT i
       in with_pos lexbuf tok}
   | '\''        {tokenize_char lexbuf}
+  | '\"'        {tokenize_string (Buffer.create 20) lexbuf}
   | eof         {with_pos lexbuf EOF}
   | _ as c      {
-    let msg = Printf.sprintf "Unrecognised character: %c" c in
-    let err = (Some (Location.of_lexbuf lexbuf), msg) in
+    let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Unrecognised character: '%c'." c) in
     Error.report_err err
   }
 and tokenize_char = parse
   | '\\' {tokenize_control lexbuf}
   | ((['a'-'z' 'A'-'Z' '0'-'9' '_'] | symbol) as c) '\'' {with_pos lexbuf (CHAR c)}
   | _ as c {
-    let msg = Printf.sprintf "Invalid char: %c" c in
-    let err = (Some (Location.of_lexbuf lexbuf), msg) in
+    let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Invalid char: %c" c) in
     Error.report_err err
   }
 and tokenize_control = parse
@@ -138,8 +137,18 @@ and tokenize_control = parse
   | 'r' '\'' {with_pos lexbuf (CHAR '\r')}
   | '\\' '\'' {with_pos lexbuf (CHAR '\\')}
   | _ as c {
-    let msg = Printf.sprintf "Invalid escape sequence: %c" c in
-    let err = (Some (Location.of_lexbuf lexbuf), msg) in
+    let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Invalid escape sequence: %c" c) in
+    Error.report_err err
+  }
+and tokenize_string buf = parse
+  | '\"'     {with_pos lexbuf (STRING (Buffer.contents buf))}
+  | str as s {Buffer.add_string buf s; tokenize_string buf lexbuf}
+  | eof      {
+    let err = (Some (Location.of_lexbuf lexbuf), "Unterminated string.") in
+    Error.report_err err
+  }
+  | _ as c {
+    let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Invalid string char: %c" c) in
     Error.report_err err
   }
 and skip_comment = parse

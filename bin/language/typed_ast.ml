@@ -4,6 +4,7 @@ type ident = string
 type func = string
 type module_name = string
 type tname = string
+type binder = int
 
 type typed_expr = Ast.located_ty * located_expr
 and located_expr = Location.t * expr
@@ -12,8 +13,10 @@ and expr =
   | Const of Ast.located_const
   | EList of typed_expr list
   | Ident of ident
+  | ETup of typed_expr list
   | Bop of typed_expr * Ast.binop * typed_expr
   | Ap of typed_expr * typed_expr
+  (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
 
 type typed_term = Ast.located_ty * located_term
 and located_term = Location.t * term
@@ -23,7 +26,6 @@ and term =
   | TLet of ident * typed_term
   | TGrouping of typed_term list
   | TIf of typed_expr * typed_term * typed_term option
-  | TTup of typed_expr list
   | TLam of Ast.located_pattern list * typed_term
 
 type located_definition = Location.t * definition
@@ -41,6 +43,12 @@ let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> Ast.pp_const out c
   | Ident i -> Ast.pp_ident out i
+  | ETup t ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_typed_expr)
+      t
   | EList l ->
     Format.fprintf
       out
@@ -67,12 +75,6 @@ and pp_typed_expr out ((t, expr) : typed_expr) =
 let rec pp_term out ((_, t) : located_term) =
   match t with
   | TExpr e -> pp_typed_expr out e
-  | TTup t ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_typed_expr)
-      t
   | TLet (i, v) -> Format.fprintf out "(@[<hov>%s@ %a@])" i pp_typed_term v
   | TGrouping body ->
     Format.fprintf

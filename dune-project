@@ -17,8 +17,8 @@
 
 (package
  (name zap)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (synopsis "a functional language")
+ (description "")
  (depends ocaml)
  (tags
-  ("add topics" "to describe" your project)))
+  ()))

@@ -34,10 +34,10 @@ def filter p (x :: xs) :=
 ;;
 
 % pattern guards
-dec compressed_filter : ('a -> bool) -> ['a] -> ['a].
-def compressed_filter _ [] := [];
-def compressed_filter p (x :: xs) : when (p x) = x :: filter p xs;
-def compressed_filter p (_ :: xs) := filter p xs
+dec cfilter : ('a -> bool) -> ['a] -> ['a].
+def cfilter _ [] := [];
+def cfilter p (x :: xs) : when (p x) = x :: cfilter p xs;
+def cfilter p (_ :: xs) := cfilter p xs
 ;;
 
 % block pattern guards
@@ -71,7 +71,7 @@ def map := go
 dec lamTest : int -> bool.
 def lamTest num :=
   % you can have let-bindings act as functions through the use of lambdas
-  let test_lambda : int -> string = lam n -> show n in
+  let test_lambda : int -> string = fun n -> show n in
   length (test_lambda num) > 10
 ;;
 

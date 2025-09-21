@@ -168,7 +168,7 @@ module Parser = struct
     | NOT -> 7
     | CONS -> 8
     | OP _ -> 9
-    | IDENT _ | INT _ | FLOAT _ | CHAR _ | STRING _ | BOOL _ | UNIT | ATSIGN -> 10
+    | UPPER_IDENT _ | IDENT _ | INT _ | FLOAT _ | CHAR _ | STRING _ | BOOL _ | UNIT | ATSIGN -> 10
     | EOF -> -1
     | _ -> 0
   ;;
@@ -236,6 +236,9 @@ module Parser = struct
       Lexer.skip l ~am:1;
       let next = parse_ty l in
       Location.combine s (Lexer.current_pos l), Ast.Arrow (left, next)
+    | s, IDENT i ->
+      Lexer.skip l ~am:1;
+      parse_arrow l (Location.combine s (Lexer.current_pos l), Ast.Constructor (i, left))
     | _ -> left
   ;;
 
@@ -265,7 +268,7 @@ module Parser = struct
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
       loc, Ast.Const (loc, Ast.Atom i)
-    | s, IDENT i -> s, Ast.Ident i
+    | s, IDENT i | s, UPPER_IDENT i -> s, Ast.Ident i
     | s, LBRACK ->
       let es =
         match Lexer.current l |> snd with
@@ -275,9 +278,16 @@ module Parser = struct
       let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
       Location.combine s e, Ast.EList es
     | _, LPAREN ->
-      let expr = parse_expr l 0 in
-      Lexer.consume l RPAREN "Expected ')' to end grouped expression or prefix operator.";
-      expr
+      let s = Lexer.current_pos l in
+      let loc, e = parse_expr l 0 in
+      let expr = 
+        match Lexer.current l with
+        | _, COMMA -> Lexer.skip ~am:1 l; Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (Fun.flip parse_expr 0))
+        | _, RPAREN -> e
+        | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok))
+      in
+      let end' = Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression." in
+      Location.combine s end', expr
     | s, KOP ->
       let pos, next = Lexer.advance l in
       (match next with
@@ -317,25 +327,32 @@ module Parser = struct
       | AND -> Ast.Bop (left, Ast.And, parse_expr l lbp)
       | OR -> Ast.Bop (left, Ast.Or, parse_expr l lbp)
       | OP o -> Ast.Bop (left, Ast.User_op o, parse_expr l lbp)
-      | IDENT i -> Ast.Ap (left, (s, Ast.Ident i))
-      | INT i -> Ast.Ap (left, (s, Ast.Const (s, Ast.Int i)))
-      | FLOAT f -> Ast.Ap (left, (s, Ast.Const (s, Ast.Float f)))
-      | CHAR c -> Ast.Ap (left, (s, Ast.Const (s, Ast.Char c)))
-      | STRING str -> Ast.Ap (left, (s, Ast.Const (s, Ast.String str)))
-      | BOOL b -> Ast.Ap (left, (s, Ast.Const (s, Ast.Bool b)))
-      | UNIT -> Ast.Ap (left, (s, Ast.Const (s, Ast.Unit)))
+      | INT i -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Int i)))
+      | FLOAT f -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Float f)))
+      | CHAR c -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Char c)))
+      | STRING str -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.String str)))
+      | BOOL b -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Bool b)))
+      | UNIT -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Unit)))
+      | IDENT i | UPPER_IDENT i -> Ast.Ap (0, left, (s, Ast.Ident i))
       | ATSIGN ->
         let i = parse_ident l
         and loc = Location.combine s (Lexer.current_pos l) in
-        Ast.Ap (left, (loc, Ast.Const (loc, Ast.Atom i)))
+        Ast.Ap (0, left, (loc, Ast.Const (loc, Ast.Atom i)))
       | LBRACK ->
         let es = Lexer.separated_list l SEMI (Fun.flip parse_expr 0) in
         let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
-        Ast.Ap (left, (Location.combine s e, Ast.EList es))
+        Ast.Ap (0, left, (Location.combine s e, Ast.EList es))
       | LPAREN ->
-        let e = parse_expr l 0 in
-        Lexer.consume l RPAREN "Expected ')' to end grouped expression.";
-        Ast.Ap (left, e)
+        let s = Lexer.current_pos l in
+        let loc, e = parse_expr l 0 in
+        let expr = 
+          match Lexer.current l with
+          | _, COMMA -> Lexer.skip ~am:1 l; Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (Fun.flip parse_expr 0))
+          | _, RPAREN -> e
+          | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok))
+        in
+        let end' = Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression." in
+        Ast.Ap (0, left, (Location.combine s end', expr))
       | op ->
         Error.report_err
           (None, Printf.sprintf "Expected binary operator, got '%s'." (Token.show op))
@@ -433,21 +450,6 @@ module Parser = struct
       let terms = Lexer.separated_list l IN parse_term in
       let e = Lexer.consume_with_pos l RBRACE "Expected '}' to end grouping." in
       Location.combine s e, Ast.TGrouping terms
-    | s, LPAREN ->
-      Lexer.skip ~am:1 l;
-      let first = parse_expr l 0 in
-      (match Lexer.current l with
-       | e, RPAREN ->
-         Lexer.skip ~am:1 l;
-         Location.combine s e, Ast.TExpr first
-       | _, COMMA ->
-         Lexer.skip ~am:1 l;
-         let rest = Lexer.separated_list l COMMA (Fun.flip parse_expr 0) in
-         let e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple term." in
-         Location.combine s e, Ast.TTup (first :: rest)
-       | pos, tok ->
-         Error.report_err
-           (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok)))
     | s, IF ->
       Lexer.skip ~am:1 l;
       let cond = parse_expr l 0 in

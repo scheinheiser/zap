@@ -6,6 +6,7 @@ type ident = string
 type func = string
 type module_name = string
 type tname = string
+type binder = int
 
 type prim =
   | PInt
@@ -22,7 +23,7 @@ type located_ty = Location.t * ty
 and ty =
   | Arrow of located_ty * located_ty
   | List of located_ty
-  | Constructor of tname * located_ty list
+  | Constructor of tname * located_ty
   | Tuple of located_ty list
   | Prim of prim
   | Udt of tname (* user defined type *)
@@ -61,7 +62,8 @@ and expr =
   | EList of located_expr list
   | Ident of ident
   | Bop of located_expr * binop * located_expr
-  | Ap of located_expr * located_expr
+  | Ap of binder * located_expr * located_expr
+  | ETup of located_expr list
 
 type located_pattern = Location.t * pattern
 
@@ -80,7 +82,6 @@ and term =
   | TLet of ident * located_ty option * located_term
   | TGrouping of located_term list
   | TIf of located_expr * located_term * located_term option
-  | TTup of located_expr list
   | TLam of located_pattern list * located_term
 
 type import_cond =
@@ -135,9 +136,7 @@ let show_prim = function
 let rec show_ty = function
   | Arrow ((_, l), (_, r)) -> Printf.sprintf "%s -> %s" (show_ty l) (show_ty r)
   | List (_, t) -> Printf.sprintf "[%s]" (show_ty t)
-  | Constructor (c, ts) ->
-    let ts' = List.map (fun (_, t) -> show_ty t) ts in
-    Printf.sprintf "%s %s" c (String.concat " " ts')
+  | Constructor (c, (_, t)) -> Printf.sprintf "%s %s" c (show_ty t)
   | Tuple ts ->
     let ts' = List.map (fun (_, t) -> show_ty t) ts in
     "(" ^ String.concat ", " ts' ^ ")"
@@ -166,13 +165,12 @@ let rec pp_ty out ((_, ty) : located_ty) =
   match ty with
   | Arrow (l, r) -> Format.fprintf out "(@[<hov>->@ %a@ %a@])" pp_ty l pp_ty r
   | List t -> Format.fprintf out "[%a]" pp_ty t
-  | Constructor (c, ts) ->
+  | Constructor (c, t) ->
     Format.fprintf
       out
       "(@[<hov>%s@ %a@])"
       c
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_ty)
-      ts
+      pp_ty t
   | Tuple ts ->
     Format.fprintf
       out
@@ -219,13 +217,19 @@ let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
   | Ident i -> pp_ident out i
+  | ETup t ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
+      t
   | EList l ->
     Format.fprintf
       out
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
       l
-  | Ap (f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
+  | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) ->
     Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
 ;;
@@ -253,12 +257,6 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
 let rec pp_term out ((_, t) : located_term) =
   match t with
   | TExpr e -> pp_expr out e
-  | TTup t ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
-      t
   | TLet (i, ty, v) ->
     Format.fprintf
       out

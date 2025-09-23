@@ -25,7 +25,7 @@ dec print : string -> ().
 dec lamTest : int -> bool.
 def lamTest num :=
   let test_lambda : int -> string = fun n -> show n in
-  Cons 10 in
+  % Cons 10 in
   length (test_lambda num) > 10
 ;;
 

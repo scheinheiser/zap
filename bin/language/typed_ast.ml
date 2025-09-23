@@ -15,7 +15,7 @@ and expr =
   | Ident of ident
   | ETup of typed_expr list
   | Bop of typed_expr * Ast.binop * typed_expr
-  | Ap of typed_expr * typed_expr
+  | Ap of binder * typed_expr * typed_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
 
 type typed_term = Ast.located_ty * located_term
@@ -55,7 +55,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_typed_expr)
       l
-  | Ap (f, arg) ->
+  | Ap (_, f, arg) ->
     Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_typed_expr f pp_typed_expr arg
   | Bop (l, op, r) ->
     Format.fprintf

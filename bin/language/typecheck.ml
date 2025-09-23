@@ -131,6 +131,27 @@ let check_list
   go [] env l
 ;;
 
+let check_list2
+      ~(f : env -> 'a -> 'b -> ('c * env) Base.Or_error.t)
+      ~(rev : bool)
+      (env : env)
+      (l : 'a list)
+      (r : 'b list)
+  : 'c Base.Or_error.t list * env
+  =
+  let rec go acc e l' r' =
+    match l', r' with
+    | [], [] when rev -> List.rev acc, e
+    | [], [] -> acc, e
+    | h :: t, h' :: t' ->
+      (match f e h h' with
+       | Ok (h'', e') -> go (Ok h'' :: acc) e' t t'
+       | Error _ as h'' -> go (h'' :: acc) e t t')
+    | _ -> raise (Error.InternalError "Internal error - called check_list2 with mismatched list lengths.")
+  in
+  go [] env l r
+;;
+
 let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
   let open Ast in
   let t =
@@ -281,16 +302,17 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
     let tup_types = List.map (fun (t, _) -> t) values in
     let tup = loc, Ast.Tuple tup_types in
     Ok (tup, (loc, Typed_ast.ETup values))
-  | Ap (_, l, r) ->
+  | Ap (b, l, r) ->
     (*TODO: recognise builtins e.g. print *)
     check_expr env l
     >>= fun ((t, _) as l') ->
     check_expr env r
     >>= fun ((t', _) as r') ->
     let _, left_conn = List.hd (flatten_arrow t)
-    and ty_loc, right_conn = List.rev (flatten_arrow t') |> List.hd in
+    and _, right_conn = List.rev (flatten_arrow t') |> List.hd
+    and ret = List.rev (flatten_arrow t) |> drop_last |> List.hd in
     if left_conn &= right_conn
-    then Ok ((ty_loc, right_conn), (loc, Typed_ast.Ap (l', r')))
+    then Ok (ret, (loc, Typed_ast.Ap (b, l', r')))
     else
       make_err
         ( Some loc
@@ -472,7 +494,7 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
     match func_type with
     | None -> check_list ~f:get_pattern_type ~rev:false e args
     | Some dec_ty ->
-      let rec unify_arg ((ty_loc, l) : Ast.located_ty) ((_, r) : Ast.located_pattern) e =
+      let rec unify_arg (e: env) ((ty_loc, l) : Ast.located_ty) ((_, r) : Ast.located_pattern) =
         match r with
         | PIdent i ->
           let e' = add_var_type e i (ty_loc, l) in
@@ -486,66 +508,39 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
         | PCons (l', r') ->
           (match l with
            | List t ->
-              unify_arg (ty_loc, l) r' e >>= fun (_, e') ->
-              unify_arg t l' e' >>| fun (_, e'') ->
+              unify_arg e (ty_loc, l) r' >>= fun (_, e') ->
+              unify_arg e' t l' >>| fun (_, e'') ->
               ((ty_loc, l), e'')
            | _ -> make_err (Some ty_loc, Printf.sprintf "Expected list type, but got type %s." (show_ty l)))
         | PList items ->
           (match l with
           | List t ->
-            let rec go acc e' = function
-              | [] -> List.rev acc, e'
-              | h :: rest ->
-                (match unify_arg t h e' with
-                  | Ok (h', e'') -> go (Ok h' :: acc) e'' rest
-                  | Error e -> go (Error e :: acc) e' rest)
-            in
-            let l', e' = go [] e items in
+            let l', e' = check_list ~f:(fun e'' v -> unify_arg e'' t v) ~rev:true e items in
             combine_errors l' >>| fun _ -> ((ty_loc, l), e')
           | _ -> make_err (Some ty_loc, Printf.sprintf "Expected a list type, but got type %s." (show_ty l)))
         | PTup items ->
           match l with
           | Tuple ts when List.length items = List.length ts ->
-            let rec go ll rl acc e' =
-              match ll, rl with
-              | [], [] -> List.rev acc, e'
-              | l' :: rest, r' :: rest' ->
-                (match unify_arg l' r' e' with
-                 | Ok (_, e'') -> go rest rest' (Ok () :: acc) e''
-                 | Error e'' -> go rest rest' (Error e'' :: acc) e')
-              | _ -> raise (Error.InternalError "Internal error - different tuple lengths.")
-            in 
-            let items', e' = go ts items [] e in 
+            let items', e' = check_list2 ~f:unify_arg ~rev:true env ts items in
             combine_errors items' >>| fun _ -> ((ty_loc, l), e')
           | _ -> make_err (Some ty_loc, Printf.sprintf "Expected a tuple type, but got type %s." (show_ty l))
       in
       let t' = flatten_arrow dec_ty |> drop_last in
-      let rec aux acc e as' ts =
-        match as', ts with
-        | [], [] -> acc, e
-        | a :: rest, t :: rest' ->
-          (match unify_arg t a e with
-          | Ok (t', e') -> aux (Ok t' :: acc) e' rest rest'
-          | Error e' -> aux (Error e' :: acc) e rest rest')
-        | _ -> raise (Failure "")
-      in aux [] e args t'
+      check_list2 ~f:unify_arg ~rev:false e t' args
   in
   combine_errors args'
   >>= fun typed_args ->
-  let when_block' =
-    match when_block with
-    | None -> Ok None
-    | Some wb ->
-      check_term env' wb
-      >>= fun ((((type_loc, wb_type), _) as wb''), _) ->
-      if wb_type &= Prim PBool
-      then Ok (Some wb'')
-      else
-        make_err
-          ( Some type_loc
-          , Printf.sprintf "Expected type bool, but got type %s." (show_ty wb_type) )
-  in
-  when_block'
+  (match when_block with
+  | None -> Ok None
+  | Some wb ->
+    check_term env' wb
+    >>= fun ((((type_loc, wb_type), wb')), _) ->
+    if wb_type &= Prim PBool
+    then Ok (Some ((type_loc, Prim PBool), wb'))
+    else
+      make_err
+        ( Some type_loc
+        , Printf.sprintf "Expected type bool, but got type %s." (show_ty wb_type) ))
   >>= fun wb ->
   let body', _ = check_list ~f:check_term ~rev:true env' body in
   combine_errors body'

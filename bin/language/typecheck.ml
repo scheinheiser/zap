@@ -56,13 +56,13 @@ let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
 
 let ( &!= ) l r : bool = not (l &= r)
 
-let builtin_defs =
+let builtin_defs loc =
   [ (* dec print : string -> (). *)
     ( "print"
-    , ( Location.dummy_loc
+    , ( loc
       , Ast.Arrow
-          ( (Location.dummy_loc, Ast.Prim Ast.PString)
-          , (Location.dummy_loc, Ast.Prim Ast.PUnit) ) ) )
+          ( (loc, Ast.Prim Ast.PString)
+          , (loc, Ast.Prim Ast.PUnit) ) ) )
   ]
 ;;
 
@@ -80,7 +80,7 @@ let fresh_tyvar =
 let init_func_env (env : env) (defs : Ast.located_definition list) : env =
   { env with
     func_env =
-      builtin_defs
+      builtin_defs Location.dummy_loc
       @ List.filter_map
           (function
             | _, Ast.Dec (i, t) -> Some (i, t)
@@ -342,12 +342,21 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
     let tup = loc, Ast.Tuple tup_types in
     Ok (tup, (loc, Typed_ast.ETup values))
   | Ap (b, l, r) ->
-    (*TODO: recognise builtins e.g. print *)
     check_expr env l
     >>= fun ((t, _) as l') ->
     check_expr env r
     >>= fun ((t', _) as r') ->
-    let ft = flatten_arrow t in
+    let open Rename in
+    let lt = 
+      if (b > Alpha.user_bind) (* checking if it's builtin or not *)
+      then t
+      else
+        let i = Alpha.find_ident (loc, e) in
+        match List.assoc_opt i (builtin_defs loc) with
+        | Some bt -> bt
+        | None -> raise (Error.InternalError "Internal error - improper binder.")
+    in
+    let ft = flatten_arrow lt in
     let _, left_conn = List.hd ft
     and _, right_conn = List.rev (flatten_arrow t') |> List.hd
     and ret = List.rev ft |> List.hd in

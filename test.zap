@@ -19,7 +19,7 @@ type myRecord :=
 
 dec show : int -> string.
 dec length : string -> int.
-dec print : string -> ().
+% dec print : string -> ().
 
 % let-binding function
 dec lamTest : int -> bool.

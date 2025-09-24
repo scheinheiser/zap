@@ -2,12 +2,6 @@ open Util
 (* made using https://github.com/contificate/summary as a reference *)
 
 (* utils *)
-let rec any (l : 'a list) (p : 'a -> bool) : bool =
-  match l with
-  | [] -> false
-  | x :: xs -> p x || any xs p
-;;
-
 let is_const (t : Token.token) : bool =
   match t with
   | INT _ | FLOAT _ | STRING _ | CHAR _ | BOOL _ | ATSIGN | UNIT -> true
@@ -130,7 +124,7 @@ module Lexer = struct
 
   let consume_any_of (stream : t) (tok : Token.token list) (msg : string) =
     let pos, next = advance stream in
-    if not @@ any tok (( = ) next) then Error.report_err (Some pos, msg) else pos
+    if not @@ List.exists (( = ) next) tok then Error.report_err (Some pos, msg) else pos
   ;;
 
   let consume_with_pos (stream : t) (tok : Token.token) (msg : string) : Location.t =
@@ -142,7 +136,7 @@ module Lexer = struct
     : Location.t
     =
     let pos, next = advance stream in
-    if not @@ any tok (( = ) next) then Error.report_err (Some pos, msg) else pos
+    if not @@ List.exists (( = ) next) tok then Error.report_err (Some pos, msg) else pos
   ;;
 
   let consume_with (stream : t) (f : Token.token -> 'a option) (msg : string) : 'a =
@@ -168,7 +162,15 @@ module Parser = struct
     | NOT -> 7
     | CONS -> 8
     | OP _ -> 9
-    | UPPER_IDENT _ | IDENT _ | INT _ | FLOAT _ | CHAR _ | STRING _ | BOOL _ | UNIT | ATSIGN -> 10
+    | UPPER_IDENT _
+    | IDENT _
+    | INT _
+    | FLOAT _
+    | CHAR _
+    | STRING _
+    | BOOL _
+    | UNIT
+    | ATSIGN -> 10
     | EOF -> -1
     | _ -> 0
   ;;
@@ -280,13 +282,20 @@ module Parser = struct
     | _, LPAREN ->
       let s = Lexer.current_pos l in
       let loc, e = parse_expr l 0 in
-      let expr = 
+      let expr =
         match Lexer.current l with
-        | _, COMMA -> Lexer.skip ~am:1 l; Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (Fun.flip parse_expr 0))
+        | _, COMMA ->
+          Lexer.skip ~am:1 l;
+          Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (Fun.flip parse_expr 0))
         | _, RPAREN -> e
-        | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok))
+        | pos, tok ->
+          Error.report_err
+            ( Some pos
+            , Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok) )
       in
-      let end' = Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression." in
+      let end' =
+        Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression."
+      in
       Location.combine s end', expr
     | s, KOP ->
       let pos, next = Lexer.advance l in
@@ -345,13 +354,20 @@ module Parser = struct
       | LPAREN ->
         let s = Lexer.current_pos l in
         let loc, e = parse_expr l 0 in
-        let expr = 
+        let expr =
           match Lexer.current l with
-          | _, COMMA -> Lexer.skip ~am:1 l; Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (Fun.flip parse_expr 0))
+          | _, COMMA ->
+            Lexer.skip ~am:1 l;
+            Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (Fun.flip parse_expr 0))
           | _, RPAREN -> e
-          | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok))
+          | pos, tok ->
+            Error.report_err
+              ( Some pos
+              , Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok) )
         in
-        let end' = Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression." in
+        let end' =
+          Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression."
+        in
         Ast.Ap (0, left, (Location.combine s end', expr))
       | op ->
         Error.report_err

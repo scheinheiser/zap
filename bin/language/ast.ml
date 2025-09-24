@@ -96,6 +96,7 @@ and ty_decl = ident * tdecl_type
 
 and tdecl_type =
   | Alias of located_ty
+  (*TODO: change the type signatures of each variant to return a `Udt` of the `ty_decl` ident.*)
   | Variant of (ident * located_ty option) list
   | Record of (ident * located_ty) list
 
@@ -165,12 +166,7 @@ let rec pp_ty out ((_, ty) : located_ty) =
   match ty with
   | Arrow (l, r) -> Format.fprintf out "(@[<hov>->@ %a@ %a@])" pp_ty l pp_ty r
   | List t -> Format.fprintf out "[%a]" pp_ty t
-  | Constructor (c, t) ->
-    Format.fprintf
-      out
-      "(@[<hov>%s@ %a@])"
-      c
-      pp_ty t
+  | Constructor (c, t) -> Format.fprintf out "(@[<hov>%s@ %a@])" c pp_ty t
   | Tuple ts ->
     Format.fprintf
       out

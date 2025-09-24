@@ -58,11 +58,7 @@ let ( &!= ) l r : bool = not (l &= r)
 
 let builtin_defs loc =
   [ (* dec print : string -> (). *)
-    ( "print"
-    , ( loc
-      , Ast.Arrow
-          ( (loc, Ast.Prim Ast.PString)
-          , (loc, Ast.Prim Ast.PUnit) ) ) )
+    "print", (loc, Ast.Arrow ((loc, Ast.Prim Ast.PString), (loc, Ast.Prim Ast.PUnit)))
   ]
 ;;
 
@@ -133,9 +129,10 @@ let add_var_type (env : env) (var : string) (ty : Ast.located_ty) : env =
   { env with var_env = (var, ty) :: env.var_env }
 ;;
 
-let replace_var_type (env: env) (var: string) (ty: Ast.located_ty) : env =
+let replace_var_type (env : env) (var : string) (ty : Ast.located_ty) : env =
   let var_env' = List.remove_assoc var env.var_env in
-  add_var_type {env with var_env=var_env'} var ty
+  add_var_type { env with var_env = var_env' } var ty
+;;
 
 let add_func_type (env : env) (func : string) (ty : Ast.located_ty) : env =
   { env with func_env = (func, ty) :: env.func_env }
@@ -347,14 +344,14 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
     check_expr env r
     >>= fun ((t', _) as r') ->
     let open Rename in
-    let lt = 
-      if (b > Alpha.user_bind) (* checking if it's builtin or not *)
+    let lt =
+      if b > Alpha.user_bind (* checking if it's builtin or not *)
       then t
-      else
+      else (
         let i = Alpha.find_ident (loc, e) in
         match List.assoc_opt i (builtin_defs loc) with
         | Some bt -> bt
-        | None -> raise (Error.InternalError "Internal error - improper binder.")
+        | None -> raise (Error.InternalError "Internal error - improper binder."))
     in
     let ft = flatten_arrow lt in
     let _, left_conn = List.hd ft
@@ -465,10 +462,10 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
        >>= fun _ ->
        if typ' &= t'
        then (
-         let env' = 
-          if value_exists env.var_env i 
-          then replace_var_type env i (loc', typ')
-          else add_var_type env i (loc', typ')
+         let env' =
+           if value_exists env.var_env i
+           then replace_var_type env i (loc', typ')
+           else add_var_type env i (loc', typ')
          in
          Ok (((loc', typ'), (loc, Typed_ast.TLet (i, v'))), env'))
        else
@@ -547,7 +544,7 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
   >>= fun (with_block', e) ->
   let args', env' =
     match func_type with
-    | None -> 
+    | None ->
       Error.report_warning
         (Some loc, "Top level definition lacks accompanying type signature.");
       check_list ~f:get_pattern_type ~rev:false e args

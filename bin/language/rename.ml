@@ -93,7 +93,7 @@ module Alpha = struct
       let i = find_ident l in
       let l', env'' = rename_expr env l in
       let r', env' = rename_expr env r in
-      (match List.assoc_opt i builtins with
+      (match List.assq_opt i builtins with
        | Some b -> (loc, Ap (b, l', r')), env'
        | None -> (loc, Ap (fresh_binder (), l', r')), env'')
   ;;
@@ -108,6 +108,9 @@ module Alpha = struct
       (loc, TExpr e), env
     | TLet (i, t, expr) ->
       let i' = fresh_alpha i in
+      if VM.exists (fun i'' _ -> i'' = i) env
+      then
+        Error.report_warning (Some loc, Printf.sprintf "Identifier '%s' is shadowed." i);
       let env' = VM.add i i' env in
       let expr', env'' = rename_term env' expr in
       (loc, TLet (i', t, expr')), env''

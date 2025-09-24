@@ -32,13 +32,18 @@ def lamTest num :=
 dec caller : ('a -> 'b) -> 'a -> 'b.
 def caller f v := f v;;
 
-dec caller : ('a -> 'b) -> 'a -> 'b.
-def caller f v := f v;;
+def shadowWarn :=
+  let k := 10 in
+  let k := 5 in
+  k
+;;
 
 dec patTest : (int, bool, string) -> [int] -> string -> ().
 def patTest (5, false, "hi") (10 :: rest) five :=
   print five
 ;;
+
+% dec print : int -> ().
 
 dec main : ().
 def main := 

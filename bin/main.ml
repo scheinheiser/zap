@@ -23,11 +23,8 @@ let () =
   let res' = Parser.parse_program l in
   let res = Alpha.rename_program res' in
   border ();
-  Ast.pp_program Format.std_formatter res
-;;
-(* border (); *)
-(* match Typecheck.check_program res with *)
-(* | Ok p -> *)
-(*   (* Format.fprintf Format.std_formatter "%a@." Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") Typed_ast.pp_typed_definition) t *) *)
-(*   Typed_ast.pp_typed_program Format.std_formatter p *)
-(* | Error e -> print_endline (Base.Error.to_string_hum e) *)
+  (* Ast.pp_program Format.std_formatter res; *)
+  (* border (); *)
+  match Typecheck.check_program res with
+  | Ok p -> Typed_ast.pp_typed_program Format.std_formatter p
+  | Error e -> print_endline (Base.Error.to_string_hum e)

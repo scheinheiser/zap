@@ -11,15 +11,7 @@ type env =
   }
 
 (* utils *)
-let drop_last l =
-  let rec go acc = function
-    | [] ->
-      raise (Error.InternalError "Internal error - called drop_last with empty list.")
-    | [ _ ] -> List.rev acc
-    | h :: t -> go (h :: acc) t
-  in
-  go [] l
-;;
+let drop_last l = List.take (List.length l - 1) l
 
 let flatten_arrow (arrow : Ast.located_ty) : Ast.located_ty list =
   let rec go acc = function
@@ -339,6 +331,10 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
     let tup = loc, Ast.Tuple tup_types in
     Ok (tup, (loc, Typed_ast.ETup values))
   | Ap (b, l, r) ->
+    let get_right = function
+      | _, Arrow (_, r') -> r'
+      | t' -> t'
+    in
     check_expr env l
     >>= fun ((t, _) as l') ->
     check_expr env r
@@ -353,10 +349,9 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
         | Some bt -> bt
         | None -> raise (Error.InternalError "Internal error - improper binder."))
     in
-    let ft = flatten_arrow lt in
-    let _, left_conn = List.hd ft
+    let _, left_conn = List.hd (flatten_arrow t)
     and _, right_conn = List.rev (flatten_arrow t') |> List.hd
-    and ret = List.rev ft |> List.hd in
+    and ret = get_right lt in
     if left_conn &= right_conn
     then Ok (ret, (loc, Typed_ast.Ap (b, l', r')))
     else

@@ -564,10 +564,10 @@ module Parser = struct
     in
     let ident = parse_ident l in
     Lexer.consume l ASSIGNMENT "Expected ':=' after type identifier.";
-    let ty, e = parse_tydecl_type l in
+    let ty, e = parse_tydecl_type l ident in
     Location.combine s e, (ident, ty)
 
-  and parse_tydecl_type (l : Lexer.t) : Ast.tdecl_type * Location.t =
+  and parse_tydecl_type (l : Lexer.t) (ident: Ast.ident) : Ast.tdecl_type * Location.t =
     match Lexer.current l with
     | _, LBRACE ->
       Lexer.skip ~am:1 l;
@@ -582,7 +582,7 @@ module Parser = struct
         Lexer.consume_with_pos l RBRACE "Expected '}' after field declaration in records."
       in
       Ast.Record fields, e
-    | _, PIPE ->
+    | s, PIPE ->
       Lexer.skip ~am:1 l;
       let parse_variant lex =
         let i = parse_upper_ident lex in
@@ -590,8 +590,11 @@ module Parser = struct
         | _, TILDE ->
           Lexer.skip ~am:1 lex;
           let t = parse_ty lex in
-          i, Some t
-        | _ -> i, None
+          let loc = Location.combine s (Lexer.current_pos l) in
+          i, (loc, Ast.Arrow (t, (loc, Ast.Udt ident)))
+        | _ -> 
+          let loc = Location.combine s (Lexer.current_pos l) in
+          i, (loc, Ast.Udt ident)
       in
       let fields = Lexer.separated_list l PIPE parse_variant in
       Ast.Variant fields, Lexer.current_pos l

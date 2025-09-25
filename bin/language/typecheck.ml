@@ -3,12 +3,12 @@ open Util
 type 'a base_env = (string * 'a) list
 
 type env =
-  { func_env : Ast.located_ty base_env
-  ; var_env : Ast.located_ty base_env
-  ; alias_env : Ast.located_ty base_env
-  ; record_env : Ast.located_ty list base_env
-  ; variant_env : Ast.located_ty option base_env base_env
-  }
+  { func_env    : Ast.located_ty base_env
+  ; var_env     : Ast.located_ty base_env
+  ; alias_env   : Ast.located_ty base_env
+  ; record_env  : Ast.located_ty list base_env
+  ; variant_env : (Ast.located_ty base_env) base_env
+  } [@@ocamlformat disable]
 
 (* utils *)
 let drop_last l = List.take (List.length l - 1) l
@@ -312,14 +312,13 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
        let rec aux l =
          match l with
          | [] -> make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
-         | (udt, vs) :: rest ->
+         | (_, vs) :: rest ->
            (match get_value_type vs i with
             | None ->
               (match get_value_type env.func_env i with
                | None -> aux rest
                | Some t' -> Ok (t', (loc, Typed_ast.Ident i)))
-            | Some None -> Ok ((loc, Udt udt), (loc, Typed_ast.Ident i))
-            | Some (Some t') -> Ok (t', (loc, Typed_ast.Ident i)))
+            | Some t' -> Ok (t', (loc, Typed_ast.Ident i)))
        in
        aux env.variant_env
      | Some t -> Ok (t, (loc, Typed_ast.Ident i)))

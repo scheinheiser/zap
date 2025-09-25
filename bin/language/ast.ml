@@ -97,7 +97,7 @@ and ty_decl = ident * tdecl_type
 and tdecl_type =
   | Alias of located_ty
   (*TODO: change the type signatures of each variant to return a `Udt` of the `ty_decl` ident.*)
-  | Variant of (ident * located_ty option) list
+  | Variant of (ident * located_ty) list
   | Record of (ident * located_ty) list
 
 type located_definition = Location.t * definition
@@ -326,10 +326,8 @@ let pp_tdecl_type out (t : tdecl_type) =
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant v ->
-    let pp_field out ((i, t) : ident * located_ty option) =
-      match t with
-      | Some t' -> Format.fprintf out "(%s %a)" i pp_ty t'
-      | None -> Format.fprintf out "%s" i
+    let pp_field out ((i, t) : ident * located_ty) =
+      Format.fprintf out "(%s %a)" i pp_ty t
     in
     Format.fprintf
       out

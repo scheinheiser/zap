@@ -4,11 +4,11 @@ module Alpha = struct
   module VM = Map.Make (String)
 
   (* any binder above this value is user defined *)
-  let user_bind = 0
-  let builtins = [ "print", 0 ]
+  let user_bind = 1
+  let builtins = [ "print", 0 ; "::", 1]
 
   let fresh_binder =
-    let i = ref 0 in
+    let i = ref 1 in
     fun () ->
       incr i;
       !i
@@ -109,10 +109,9 @@ module Alpha = struct
     | TLet (i, t, expr) ->
       let i' = fresh_alpha i in
       if VM.exists (fun i'' _ -> i'' = i) env
-      then
-        Error.report_warning (Some loc, Printf.sprintf "Identifier '%s' is shadowed." i);
-      let env' = VM.add i i' env in
-      let expr', env'' = rename_term env' expr in
+      then Error.report_warning (Some loc, Printf.sprintf "Identifier '%s' is shadowed." i);
+      let expr', env' = rename_term env expr in
+      let env'' = VM.add i i' env' in
       (loc, TLet (i', t, expr')), env''
     | TGrouping g ->
       let g', env' = rename_list ~f:rename_term env g in

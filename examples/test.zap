@@ -19,7 +19,6 @@ type myRecord :=
 
 dec show : int -> string.
 dec length : string -> int.
-% dec print : string -> ().
 
 % let-binding function
 dec lamTest : int -> bool.
@@ -34,8 +33,17 @@ def caller f v := f v;;
 
 def shadowWarn :=
   let k := 10 in
-  let k := 5 in
+  let k := 5 + k in
   k
+;;
+
+def failingUnification n :=
+  n + 1 in
+  n + 2 in
+
+  % should fail
+  % n :: ["hi"] in
+  n
 ;;
 
 dec patTest : (int, bool, string) -> [int] -> string -> ().

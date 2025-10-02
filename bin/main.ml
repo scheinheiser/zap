@@ -1,30 +1,20 @@
 open Language
 open Parser
-open Rename
+(* open Rename *)
 
-let border () = Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline
-(* print_newline () *)
+let border () = 
+  Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
+  print_newline ()
 
 let () =
-  let _ =
-    "def map := go\n\
-    \      with\n\
-    \        % you can omit the dec for functions/variables in with-blocks\n\
-    \        def go _ [] := [];\n\
-    \        def bruh f (x :: xs) := f x :: go f xs\n\
-    \        ;;\n\
-    \    ;;\n\
-    \  "
-  in
-  (* let input = "print \"hello. zap\"" in *)
-  let input = In_channel.(open_text "test.zap" |> input_all) in
-  print_endline input;
+  let input = In_channel.(open_text "examples/test.zap" |> input_all) in
+  (* let input = "length (show [10])" in *)
   let l = Lexer.of_string input in
   let res' = Parser.parse_program l in
-  let res = Alpha.rename_program res' in
+  let res = Rename.Alpha.rename_program res' in
+  Ast.pp_program Format.std_formatter res;
   border ();
-  (* Ast.pp_program Format.std_formatter res; *)
-  (* border (); *)
   match Typecheck.check_program res with
   | Ok p -> Typed_ast.pp_typed_program Format.std_formatter p
   | Error e -> print_endline (Base.Error.to_string_hum e)
+;;

@@ -156,7 +156,7 @@ let pp_prim out (t : prim) =
     | PChar -> "char"
     | PBool -> "bool"
     | PAtom -> "atom"
-    | PUnit -> "()"
+    | PUnit -> "unit"
     | PGeneric n -> n
   in
   Format.fprintf out "%s" (of_prim t)

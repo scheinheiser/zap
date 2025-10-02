@@ -36,20 +36,21 @@ let op_to_string (t : Token.token) : string =
 
 let is_delim (t : Token.token) : bool =
   match t with
-  | EOF | RPAREN | COMMA | RBRACE | IN | SEMI | SEMISEMI | IF | THEN | ELSE -> true
+  | RPAREN | COMMA | RBRACE | IN | SEMI | SEMISEMI | IF | THEN | ELSE -> true
   | _ -> false
 ;;
 
 (* main things *)
 module Lexer = struct
   type t = { mutable tokens : Token.t list }
+  let get {tokens} = tokens
 
   let of_lexbuf (lexbuf : Lexing.lexbuf) : t =
     let rec aux acc =
       let next = Lexer.token lexbuf in
       match next with
       | _, Token.EOF ->
-        let res = List.rev (next :: acc) in
+        let res = List.rev acc in
         { tokens = res }
       | _ -> aux (next :: acc)
     in
@@ -57,7 +58,10 @@ module Lexer = struct
   ;;
 
   let of_string (s : string) : t = Lexing.from_string s |> of_lexbuf
-  let current ({ tokens = stream } : t) : Token.t = List.hd stream
+  let current (stream : t) : Token.t =
+    match stream.tokens with
+    | t :: _ -> t
+    | [] -> Location.dummy_loc, Token.EOF
   let current_pos ({ tokens = stream } : t) : Location.t = List.hd stream |> fst
 
   let advance (stream : t) : Token.t =
@@ -152,7 +156,7 @@ module Parser = struct
 
   let get_bp (t : Token.token) : int =
     match t with
-    | LPAREN | RPAREN ->
+    | LPAREN | LBRACK ->
       1 (* we give this a slight bit of precedence for cases like `length (show 10)` *)
     | NE | EQ -> 2
     | AND | OR -> 3
@@ -246,13 +250,11 @@ module Parser = struct
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
   let rec parse_expr (l : Lexer.t) (limit : int) : Ast.located_expr =
-    let s = Lexer.current_pos l in
-    let left = nud l in
-    let lbp = Lexer.current l |> snd |> get_bp in
+    let (s, _) as left = nud l in
     let rec go lf =
-      if lbp > limit && not (Lexer.current l |> snd |> is_delim)
+      if (Lexer.current l |> snd |> get_bp) > limit
       then (
-        let _, op_tok = Lexer.advance l in
+        let (_, op_tok) = Lexer.advance l in
         go (led l lf (get_bp op_tok) s op_tok))
       else lf
     in
@@ -269,7 +271,7 @@ module Parser = struct
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
-      loc, Ast.Const (loc, Ast.Atom i)
+      s, Ast.Const (loc, Ast.Atom i)
     | s, IDENT i | s, UPPER_IDENT i -> s, Ast.Ident i
     | s, LBRACK ->
       let es =
@@ -317,7 +319,7 @@ module Parser = struct
         (left : Ast.located_expr)
         (lbp : int)
         (s : Location.t)
-        (op : Token.token)
+        (op : Token.t)
     : Ast.located_expr
     =
     let expr =
@@ -503,7 +505,7 @@ module Parser = struct
 
   and parse_def (l : Lexer.t) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEF "Expected 'def' keyword." in
-    let n = parse_ident l in
+    let n = parse_definition_ident l in
     let args = parse_args l in
     let when_block =
       match Lexer.current l with
@@ -551,11 +553,20 @@ module Parser = struct
 
   and parse_dec (l : Lexer.t) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEC "Expected 'dec' keyword." in
-    let n = parse_ident l in
+    let n = parse_definition_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
     let t = parse_ty l in
     let e = Lexer.consume_with_pos l DOT "Expected '.' after 'dec' sig." in
     Location.combine s e, Ast.Dec (n, t)
+
+  and parse_definition_ident (l: Lexer.t): Ast.ident = 
+    match Lexer.advance l with
+    | _, IDENT i -> i
+    | _, LPAREN ->
+      let i = Lexer.consume_with l (function OP o -> Some o | _ -> None) "Expected operator after '(' in definition." in
+      Lexer.consume l RPAREN "Expected ')' after operator identifier.";
+      i
+    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected identifier or operator, but got '%s'." (Token.show tok))
   ;;
 
   let rec parse_tydecl (l : Lexer.t) : Ast.located_ty_decl =
@@ -567,7 +578,7 @@ module Parser = struct
     let ty, e = parse_tydecl_type l ident in
     Location.combine s e, (ident, ty)
 
-  and parse_tydecl_type (l : Lexer.t) (ident: Ast.ident) : Ast.tdecl_type * Location.t =
+  and parse_tydecl_type (l : Lexer.t) (ident : Ast.ident) : Ast.tdecl_type * Location.t =
     match Lexer.current l with
     | _, LBRACE ->
       Lexer.skip ~am:1 l;
@@ -592,7 +603,7 @@ module Parser = struct
           let t = parse_ty lex in
           let loc = Location.combine s (Lexer.current_pos l) in
           i, (loc, Ast.Arrow (t, (loc, Ast.Udt ident)))
-        | _ -> 
+        | _ ->
           let loc = Location.combine s (Lexer.current_pos l) in
           i, (loc, Ast.Udt ident)
       in

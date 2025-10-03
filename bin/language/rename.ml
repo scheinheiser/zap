@@ -77,7 +77,7 @@ module Alpha = struct
     | Const _ -> (loc, expr), env
     | Ident i ->
       (match VM.find_opt i env with
-       | Some i' -> (loc, Ident i'), env
+       | Some i' -> Printf.printf "%s: %s\n" i i'; (loc, Ident i'), env
        | None -> (loc, Ident i), env)
     | EList items ->
       let items', env' = rename_list ~f:rename_expr env items in
@@ -154,10 +154,7 @@ module Alpha = struct
         then i, env
         else (
           match VM.find_opt i env with
-          | Some i' ->
-            let i'' = fresh_alpha i in
-            let env' = VM.add i i'' env in
-            i', env'
+          | Some i' -> i', env
           | None ->
             let i' = fresh_alpha i in
             let env' = VM.add i i' env in
@@ -170,13 +167,13 @@ module Alpha = struct
          Some t, e'
        | None -> None, env)
       |> fun (when_block', env) ->
-      let body', env = rename_list ~f:rename_term env body in
       (match with_block with
        | Some wb ->
          let ds, e' = rename_list ~f:rename_definition env wb in
          Some ds, e'
        | None -> None, env)
       |> fun (with_block', env) ->
+      let body', env = rename_list ~f:rename_term env body in
       (loc, Def (i', args', when_block', body', with_block')), env
   ;;
 

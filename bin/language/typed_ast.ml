@@ -16,7 +16,6 @@ and expr =
   | ETup of typed_expr list
   | Bop of typed_expr * Ast.binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
-(* we give each function a binder to distinguish between user-defined functions and builtins later on *)
 
 type typed_term = Ast.located_ty * located_term
 and located_term = Location.t * term

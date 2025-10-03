@@ -1,46 +1,6 @@
-open Util
 (* made using https://github.com/contificate/summary as a reference *)
+open Util
 
-(* utils *)
-let is_const (t : Token.token) : bool =
-  match t with
-  | INT _ | FLOAT _ | STRING _ | CHAR _ | BOOL _ | ATSIGN | UNIT -> true
-  | _ -> false
-;;
-
-let is_op (t : Token.token) : bool =
-  match t with
-  | OP _ | PLUS | MINUS | DIV | MUL | AND | OR | LT | GT | LTE | GTE | CONS | NE | EQ ->
-    true
-  | _ -> false
-;;
-
-let op_to_string (t : Token.token) : string =
-  match t with
-  | OP o -> o
-  | PLUS -> "+"
-  | MINUS -> "-"
-  | DIV -> "/"
-  | MUL -> "*"
-  | AND -> "&&"
-  | OR -> "||"
-  | LT -> "<"
-  | GT -> ">"
-  | LTE -> "<="
-  | GTE -> ">="
-  | CONS -> "::"
-  | NE -> "/="
-  | EQ -> "="
-  | _ -> ""
-;;
-
-let is_delim (t : Token.token) : bool =
-  match t with
-  | RPAREN | COMMA | RBRACE | IN | SEMI | SEMISEMI | IF | THEN | ELSE -> true
-  | _ -> false
-;;
-
-(* main things *)
 module Lexer = struct
   type t = { mutable tokens : Token.t list }
   let get {tokens} = tokens
@@ -201,10 +161,6 @@ module Parser = struct
     match Lexer.advance l with
     | s, TY_PRIM t -> parse_arrow l (s, Ast.Prim t)
     | s, IDENT i -> parse_arrow l (s, Ast.Udt i)
-    | s, LBRACK ->
-      let ty = parse_ty l in
-      let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
-      parse_arrow l (Location.combine s e, Ast.List ty)
     | s, LPAREN ->
       let first = parse_ty l in
       let t =
@@ -242,6 +198,9 @@ module Parser = struct
       Lexer.skip l ~am:1;
       let next = parse_ty l in
       Location.combine s (Lexer.current_pos l), Ast.Arrow (left, next)
+    | s, IDENT "list" ->
+      Lexer.skip l ~am:1;
+      parse_arrow l (Location.combine s (Lexer.current_pos l), Ast.List left)
     | s, IDENT i ->
       Lexer.skip l ~am:1;
       parse_arrow l (Location.combine s (Lexer.current_pos l), Ast.Constructor (i, left))
@@ -302,7 +261,7 @@ module Parser = struct
     | s, KOP ->
       let pos, next = Lexer.advance l in
       (match next with
-       | o when is_op o -> Location.combine s pos, Ast.Ident (op_to_string o)
+       | o when Token.is_op o -> Location.combine s pos, Ast.Ident (Token.op_to_string o)
        | op ->
          Error.report_err
            ( Some pos
@@ -319,7 +278,7 @@ module Parser = struct
         (left : Ast.located_expr)
         (lbp : int)
         (s : Location.t)
-        (op : Token.t)
+        (op : Token.token)
     : Ast.located_expr
     =
     let expr =
@@ -382,8 +341,7 @@ module Parser = struct
     Lexer.list_with_end
       l
       (function
-        | WILDCARD | LBRACK | LPAREN | IDENT _ -> false
-        | t when is_const t -> false
+        | WILDCARD | LBRACK | LPAREN | IDENT _ | INT _ | FLOAT _ | STRING _ | CHAR _ | BOOL _ | ATSIGN | UNIT -> false
         | _ -> true)
       parse_pattern
 

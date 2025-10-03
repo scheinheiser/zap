@@ -53,7 +53,7 @@ let builtin_defs loc =
   let open Ast in
   [ (* dec print : string -> (). *)
     "print", (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)));
-    (* dec (::) : 'a -> ['a] -> ['a]. *)
+    (* dec (::) : 'a -> 'a list -> 'a list. *)
     "::", (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, (Prim (PGeneric "'a")))), (loc, List (loc, Prim (PGeneric "'a")))))))
   ]
 ;;
@@ -275,81 +275,26 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
 ;;
 
 let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
-  : (Typed_ast.typed_expr * env) Base.Or_error.t
+  : Typed_ast.typed_expr Base.Or_error.t
   =
   let open Ast in
   let open Base.Or_error in
-  let rec unify_ident (env: env) (((loc', t), te) : Typed_ast.typed_expr): env Base.Or_error.t =
-    let rec go e = function
-      | [] -> Ok e
-      | h :: t' when value_exists env.var_env h ->
-        let ty_loc, ty = List.assoc h env.var_env in
-        if (flatten_arrow (loc', t) |> List.hd |> snd) &!= ty
-        then 
-          make_err
-            (Some loc', Printf.sprintf "%s - Expected type %s, but got type %s." h (show_ty t) (show_ty ty))
-        else
-          let env' = replace_value_type env.var_env h (ty_loc, t) in
-          go {env with var_env = env'} t'
-      | h :: t' when value_exists env.func_env h ->
-        let ty_loc, ty = List.assoc h env.func_env in
-        if ty &!= t
-        then make_err (Some ty_loc, Printf.sprintf "Expected type %s, but got type %s." (show_ty t) (show_ty ty))
-        else
-          let env' = replace_value_type env.func_env h (ty_loc, t) in
-          go {env with func_env = env'} t'
-      | h :: t' ->
-        let rec aux l =
-          match l with
-          | [] -> make_err (Some loc', Printf.sprintf "Undefined identifier - %s." h)
-          | (_, vs) :: rest ->
-            (match get_value_type vs h with
-             | None -> aux rest
-             | Some t' -> Ok t')
-        in
-        aux env.variant_env 
-        >>= fun (ty_loc, ty) ->
-        if ty &!= t
-        then make_err (Some loc', Printf.sprintf "Expected type %s, but got type %s." (show_ty t) (show_ty ty))
-        else
-          let env' = replace_value_type env.var_env h (ty_loc, t) in
-          go {env with var_env = env'} t'
-    in go env (find_idents ((loc', t), te))
-  and find_idents ((_, (_, e)): Typed_ast.typed_expr): string list =
-    let open Typed_ast in
-    match e with
-    | Ident i -> [i]
-    | Const _ -> []
-    | Bop (l, _, r) | Ap (_, l, r)-> (find_idents l) @ (find_idents r)
-    | EList items | ETup items -> List.map find_idents items |> List.flatten
-  in 
   match e with
-  | Const c -> Ok ((get_const_type c, (loc, Typed_ast.Const c)), env)
+  | Const c -> Ok (get_const_type c, (loc, Typed_ast.Const c))
   | EList es ->
     let es' = List.map (fun e -> check_expr env e) es in
     combine_errors es'
     >>= fun exprs ->
     (match exprs with
-     | [] -> Ok (((loc, Prim (PGeneric (fresh_tyvar ()))), (loc, Typed_ast.EList [])), env)
-     | ((((ty_loc, ht) as t), _), _) :: tl ->
-       let rec go e = function
-        | [] -> Ok e
-        | (_, h) :: t' ->
-          (match unify_ident e (t, h) with
-          | Ok e -> go e t'
-          | Error _ as err -> err)
-       in
-       let tl, exprs = List.map (fun (e, _) -> e) tl, List.map (fun (e, _) -> e) exprs in
+     | [] -> Ok ((loc, Prim (PGeneric (fresh_tyvar ()))), (loc, Typed_ast.EList []))
+     | (((ty_loc, ht) as t), _) :: tl ->
        let wts =
          List.filter_map
            (fun ((_, t'), _) -> if t' &= ht then None else Some (show_ty t'))
            tl
        in
        (match wts with
-        | [] -> 
-          go env exprs
-          >>= fun env ->
-          Ok (((ty_loc, List t), (loc, Typed_ast.EList exprs)), env)
+        | [] -> Ok ((ty_loc, List t), (loc, Typed_ast.EList exprs))
         | es_types ->
           make_err
             ( Some loc
@@ -362,42 +307,35 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
      | None ->
        let rec aux l =
          match l with
-         | [] -> 
-          (match get_value_type env.func_env i with
-          | None ->
-            make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
-          | Some t' -> Ok ((t', (loc, Typed_ast.Ident i)), env))
+         | [] -> make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
          | (_, vs) :: rest ->
            (match get_value_type vs i with
-            | None -> aux rest
-            | Some t' -> Ok ((t', (loc, Typed_ast.Ident i)), env))
+            | None ->
+              (match get_value_type env.func_env i with
+               | None -> aux rest
+               | Some t' -> Ok (t', (loc, Typed_ast.Ident i)))
+            | Some t' -> Ok (t', (loc, Typed_ast.Ident i)))
        in
        aux env.variant_env
-     | Some t -> Ok (((t, (loc, Typed_ast.Ident i))), env))
+     | Some t -> Ok (t, (loc, Typed_ast.Ident i)))
   | ETup contents ->
     List.map (fun e -> check_expr env e) contents
     |> combine_errors
     >>= fun values ->
-    let values = List.map (fun (e, _) -> e) values in
     let tup_types = List.map (fun (t, _) -> t) values in
     let tup = loc, Ast.Tuple tup_types in
-    Ok ((tup, (loc, Typed_ast.ETup values)), env)
+    Ok (tup, (loc, Typed_ast.ETup values))
   | Ap (b, l, r) ->
     let get_right = function
       | _, Arrow (_, r') -> r'
       | t' -> t'
     in
     check_expr env l
-    >>= fun (((t, _) as l', _)) ->
+    >>= fun ((t, _) as l') ->
     check_expr env r
-    >>= fun (((t', r'') as r', _)) ->
-    unify_ident env l'
-    >>= fun env ->
-    let locc, left_conn = List.hd (flatten_arrow t) in
-    unify_ident env ((locc, left_conn), r'')
-    >>= fun env ->
+    >>= fun ((t', _) as r') ->
+    let open Rename in
     let lt =
-      let open Rename in
       if b > Alpha.user_bind (* checking if it's builtin or not *)
       then t
       else (
@@ -406,18 +344,23 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
         | Some bt -> bt
         | None -> raise (Error.InternalError "Internal error - improper binder."))
     in
-    let _, right_conn = List.rev (flatten_arrow t') |> List.hd
+    let _, left_conn = List.hd (flatten_arrow t)
+    and _, right_conn = List.rev (flatten_arrow t') |> List.hd
     and ret = get_right lt in
     if left_conn &= right_conn
-    then Ok ((ret, (loc, Typed_ast.Ap (b, l', r'))), env)
+    then Ok (ret, (loc, Typed_ast.Ap (b, l', r')))
     else
       make_err
-        (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty left_conn) (show_ty right_conn))
+        ( Some loc
+        , Printf.sprintf
+            "Expected type %s, but got %s."
+            (show_ty left_conn)
+            (show_ty right_conn) )
   | Bop (l, op, r) ->
     check_expr env l
-    >>= fun ((((ty_loc', t), l'') as l', _)) ->
+    >>= fun (((_, t), _) as l') ->
     check_expr env r
-    >>= fun ((((ty_loc, t'), r'') as r', _)) ->
+    >>= fun (((ty_loc, t'), _) as r') ->
     (match op with
      | (Add | Mul | Div | Sub) when t &= t' ->
        if t &!= Prim PInt && t &!= Prim PFloat
@@ -425,42 +368,21 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
          make_err
            (Some loc, Printf.sprintf "Expected type int or float, but got %s." (show_ty t))
        else (
-         match t, t' with
-         | Prim PFloat, _ | _, Prim PFloat -> 
-            unify_ident env ((ty_loc', Prim PFloat), l'')
-            >>= fun env ->
-            unify_ident env ((ty_loc, Prim PFloat), r'')
-            >>= fun env ->
-            Ok (((ty_loc, Prim PFloat), (loc, Typed_ast.Bop (l', op, r'))), env)
-         | _ ->
-            unify_ident env ((ty_loc', Prim PInt), l'')
-            >>= fun env ->
-            unify_ident env ((ty_loc, Prim PInt), r'')
-            >>= fun env ->
-            Ok ((((ty_loc, Prim PInt), (loc, Typed_ast.Bop (l', op, r')))), env))
+         match t with
+         | Prim PFloat -> Ok ((ty_loc, Prim PFloat), (loc, Typed_ast.Bop (l', op, r')))
+         | _ -> Ok ((ty_loc, Prim PInt), (loc, Typed_ast.Bop (l', op, r'))))
      | (And | Or) when t &!= Prim PBool ->
        make_err (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
      | (And | Or) when t' &!= Prim PBool ->
-       make_err (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t'))
-     | And | Or -> 
-        unify_ident env ((ty_loc', Prim PBool), l'')
-        >>= fun env ->
-        unify_ident env ((ty_loc, Prim PBool), r'')
-        >>= fun env ->
-        Ok (((ty_loc, t), (loc, Typed_ast.Bop (l', op, r'))), env)
+       make_err (Some loc, Printf.sprintf "Expected type bool, but got %s." (show_ty t))
+     | And | Or -> Ok ((ty_loc, t), (loc, Typed_ast.Bop (l', op, r')))
      | (Less | Greater | LessE | GreaterE | Equal | NotEq) when t &= t' ->
-       (*TODO: might need to fix this case *)
-       Ok (((ty_loc, Prim PBool), (loc, Typed_ast.Bop (l', op, r'))), env)
+       Ok ((ty_loc, Prim PBool), (loc, Typed_ast.Bop (l', op, r')))
      | Cons ->
        (match t' with
         | List (_, list_type) ->
           if t &= list_type
-          then 
-            unify_ident env ((ty_loc', list_type), l'')
-            >>= fun env ->
-            unify_ident env ((ty_loc, list_type), r'')
-            >>= fun env ->
-            Ok (((ty_loc, t'), (loc, Typed_ast.Bop (l', op, r'))), env)
+          then Ok ((ty_loc, list_type), (loc, Typed_ast.Bop (l', op, r')))
           else
             make_err
               ( Some loc
@@ -469,11 +391,7 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
                   (show_ty list_type)
                   (show_ty t) )
         | Prim (PGeneric g) when String.starts_with ~prefix:"t_" g ->
-          unify_ident env ((ty_loc', t), l'')
-          >>= fun env ->
-          unify_ident env ((ty_loc, t), r'')
-          >>= fun env ->
-          Ok (((ty_loc, List (ty_loc, t)), (loc, Typed_ast.Bop (l', op, r'))), env)
+          Ok ((ty_loc, List (ty_loc, t)), (loc, Typed_ast.Bop (l', op, r')))
         | err_type ->
           make_err
             ( Some loc
@@ -485,27 +403,34 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
         | None -> make_err (Some loc, Printf.sprintf "Undefined operator - %s." i)
         | Some ((_, esig) as fsig) ->
           (match flatten_arrow fsig with
-           | [ (_, lt) as lt'; (_, rt) as rt'; ret ] ->
+           | [ (_, lt); (_, rt); ret ] ->
              (match () with
               | _ when lt &!= t ->
                 make_err
-                  (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty lt) (show_ty t))
+                  ( Some loc
+                  , Printf.sprintf
+                      "Expected type %s, but got %s."
+                      (show_ty lt)
+                      (show_ty t) )
               | _ when rt &!= t' ->
                 make_err
-                  (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty rt) (show_ty t'))
-              | _ -> 
-                unify_ident env (lt', l'')
-                >>= fun env ->
-                unify_ident env (rt', r'')
-                >>= fun env ->
-                Ok ((ret, (loc, Typed_ast.Bop (l', op, r'))), env))
+                  ( Some loc
+                  , Printf.sprintf
+                      "Expected type %s, but got %s."
+                      (show_ty rt)
+                      (show_ty t') )
+              | _ -> Ok (ret, (loc, Typed_ast.Bop (l', op, r'))))
            | _ ->
              make_err
-               (Some loc, Printf.sprintf "Expected binary operator, but got operator with signature %s." (show_ty esig))))
+               ( Some loc
+               , Printf.sprintf
+                   "Expected binary operator, but got operator with signature %s."
+                   (show_ty esig) )))
      | _ ->
        make_err
-         (Some loc, Printf.sprintf "Expected type %s, but got %s." (show_ty t) (show_ty t')))
-      [@@ocamlformat "disable"]
+         ( Some loc
+         , Printf.sprintf "Expected type %s, but got %s." (show_ty t) (show_ty t') ))
+    [@@ocamlformat "disable"]
 ;;
 
 let rec check_term (env : env) ((loc, t) : Ast.located_term)
@@ -515,7 +440,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
   let open Base.Or_error in
   match t with
   | TExpr e ->
-    check_expr env e >>| fun ((t', e'), env') -> (t', (loc, Typed_ast.TExpr (t', e'))), env'
+    check_expr env e >>| fun (t', e') -> (t', (loc, Typed_ast.TExpr (t', e'))), env
   | TLet (i, typ, v) ->
     check_term env v
     >>= fun ((((type_loc, t'), _) as v'), _) ->
@@ -545,7 +470,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
     Ok ((typ, (loc, Typed_ast.TGrouping ts'')), env)
   | TIf (cond, texpr, fexpr) ->
     check_expr env cond
-    >>= fun (cond', env) ->
+    >>= fun cond' ->
     (match cond' with
      | (_, Prim PBool), _ ->
        check_term env texpr
@@ -609,19 +534,19 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
       check_list ~f:get_pattern_type ~rev:false e args
     | Some dec_ty ->
       let rec unify_arg
-                (e : env)
+                (env : env)
                 ((ty_loc, l) : Ast.located_ty)
                 ((_, r) : Ast.located_pattern)
         : (Ast.located_ty * env) Base.Or_error.t
         =
         match r with
         | PIdent i ->
-          let e' = add_var_type e i (ty_loc, l) in
+          let e' = add_var_type env i (ty_loc, l) in
           Ok ((ty_loc, l), e')
         | PConst c ->
           let loc', c' = get_const_type c in
           if l &= c'
-          then Ok ((ty_loc, l), e)
+          then Ok ((ty_loc, l), env)
           else
             make_err
               ( Some loc'
@@ -629,11 +554,11 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
                   "Expected type %s, but got type %s."
                   (show_ty l)
                   (show_ty c') )
-        | PWild -> Ok ((ty_loc, l), e)
+        | PWild -> Ok ((ty_loc, l), env)
         | PCons (l', r') ->
           (match l with
            | List t ->
-             unify_arg e (ty_loc, l) r'
+             unify_arg env (ty_loc, l) r'
              >>= fun (_, e') -> unify_arg e' t l' >>| fun (_, e'') -> (ty_loc, l), e''
            | _ ->
              make_err
@@ -643,7 +568,7 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
           (match l with
            | List t ->
              let l', e' =
-               check_list ~f:(fun e'' v -> unify_arg e'' t v) ~rev:true e items
+               check_list ~f:(fun e'' v -> unify_arg e'' t v) ~rev:true env items
              in
              combine_errors l' >>| fun _ -> (ty_loc, l), e'
            | _ ->
@@ -684,7 +609,7 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
   let ret_loc, ret = (last_loc, last) :: typed_args |> List.rev |> build_arrow in
   match func_type with
   | None ->
-    let env'' = add_func_type env i (ret_loc, ret) in
+    let env'' = add_func_type env' i (ret_loc, ret) in
     let d = loc, (i, (ret_loc, ret), args, wb, typed_body) in
     Ok (d :: with_block', env'')
   | Some ((_, t) as dec_ty) when t &= ret ->

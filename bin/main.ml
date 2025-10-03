@@ -1,6 +1,6 @@
 open Language
 open Parser
-(* open Rename *)
+open Rename
 
 let border () = 
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
@@ -11,7 +11,7 @@ let () =
   (* let input = "length (show [10])" in *)
   let l = Lexer.of_string input in
   let res' = Parser.parse_program l in
-  let res = Rename.Alpha.rename_program res' in
+  let res = Alpha.rename_program res' in
   Ast.pp_program Format.std_formatter res;
   border ();
   match Typecheck.check_program res with

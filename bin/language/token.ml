@@ -136,8 +136,29 @@ let show (t : token) : string =
   | EOF -> sprintf "EOF"
 ;;
 
-let is_binop (t : token) : bool =
+let is_op (t : token) : bool =
   match t with
-  | PLUS | MINUS | MUL | DIV | CONS | NE | EQ | LT | LTE | GT | GTE -> true
+  | OP _ | PLUS | MINUS | DIV | MUL | AND | OR | LT | GT | LTE | GTE | CONS | NE | EQ ->
+    true
   | _ -> false
 ;;
+
+let op_to_string (t : token) : string =
+  match t with
+  | OP o -> o
+  | PLUS -> "+"
+  | MINUS -> "-"
+  | DIV -> "/"
+  | MUL -> "*"
+  | AND -> "&&"
+  | OR -> "||"
+  | LT -> "<"
+  | GT -> ">"
+  | LTE -> "<="
+  | GTE -> ">="
+  | CONS -> "::"
+  | NE -> "/="
+  | EQ -> "="
+  | _ -> ""
+;;
+

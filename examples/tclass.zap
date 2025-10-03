@@ -1,15 +1,23 @@
 @module TClass
 
-trait 'a Num with
+class Ord 'a : minimal (=) | (/=) =
+  dec (=) : 'a -> 'a -> bool.
+  def (=) l r := not (l /= r)
+
+  dec (/=) : 'a -> 'a -> bool.
+  def (/=) l r := not (l = r);
+;;
+
+class Num 'a :=
   dec (+) : 'a -> 'a -> 'a.
   dec (-) : 'a -> 'a -> 'a.
   dec (*) : 'a -> 'a -> 'a.
   dec (/) : 'a -> 'a -> 'a.
 
-  dec compare : 'a -> 'a -> bool.
+  dec compare : Ord 'a => 'a -> 'a -> bool.
 ;;
 
-instance int Num where
+instance Num int where
   def (+) l r := l + r;
   def (-) l r := l - r;
   def (*) l r := l * r;
@@ -18,4 +26,6 @@ instance int Num where
   def compare l r := l >= r
 ;;
 
-dec (^+) <'a impl Num; 'b impl Num>: 'a -> 'b -> 'a.
+dec (^=) : (Ord 'a, Ord 'b) => 'a -> 'b -> bool.
+
+dec (^+) : Num 'a => 'a -> 'b -> 'a.

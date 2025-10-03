@@ -26,6 +26,7 @@ def lamTest num :=
   let test_lambda : int -> string = fun n -> show n in
   Cons 10 in
   length (test_lambda num) > 10
+  % (test_lambda num) = "hi"
 ;;
 
 dec caller : ('a -> 'b) -> 'a -> 'b.
@@ -40,18 +41,19 @@ def shadowWarn :=
 def failingUnification n :=
   n + 1 in
   n + 2 in
+  (n = 4) || (n = 10) in
 
   % should fail
   % n :: ["hi"] in
   n
 ;;
 
-dec patTest : (int, bool, string) -> [int] -> string -> ().
+dec patTest : (int, bool, string) -> int list -> string -> ().
 def patTest (5, false, "hi") (10 :: rest) five :=
+  push 10 in
+  pop false in
   print five
 ;;
-
-% dec print : int -> ().
 
 dec main : ().
 def main := 

@@ -63,6 +63,7 @@ and expr =
   | Ident of ident
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
+(* we give each function a binder to distinguish between user-defined functions and builtins later on *)
   | ETup of located_expr list
 
 type located_pattern = Location.t * pattern
@@ -96,7 +97,6 @@ and ty_decl = ident * tdecl_type
 
 and tdecl_type =
   | Alias of located_ty
-  (*TODO: change the type signatures of each variant to return a `Udt` of the `ty_decl` ident.*)
   | Variant of (ident * located_ty) list
   | Record of (ident * located_ty) list
 

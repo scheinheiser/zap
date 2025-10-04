@@ -9,7 +9,7 @@ end = struct
 
   (* any binder above this value is user defined *)
   let user_bind = 1
-  let builtins = [ "print", 0 ; "::", 1 ]
+  let builtins = [ "print", 0; "::", 1 ]
 
   let fresh_binder =
     let i = ref 1 in
@@ -48,8 +48,9 @@ end = struct
     | Const (_, Ident i) -> i
     | Ap (_, l, _) -> find_ident l
     | _ -> ""
-    (* | b -> Error.report_err (Some loc, Format.asprintf "Expected function identifier, but got %a." Ast.pp_expr (loc, b)) *)
   ;;
+
+  (* | b -> Error.report_err (Some loc, Format.asprintf "Expected function identifier, but got %a." Ast.pp_expr (loc, b)) *)
 
   let rec rename_pattern (env : string VM.t) ((loc, pat) : Ast.located_pattern)
     : Ast.located_pattern * string VM.t
@@ -82,7 +83,7 @@ end = struct
     | Const (s, Ident i) ->
       (match VM.find_opt i env with
        | Some i' -> (loc, Const (s, Ident i')), env
-       | None    -> (loc, Const (s, Ident i)), env)
+       | None -> (loc, Const (s, Ident i)), env)
     | Const _ -> (loc, expr), env
     | EList items ->
       let items', env' = rename_list ~f:rename_expr env items in
@@ -94,17 +95,16 @@ end = struct
       let l', env' = rename_expr env l in
       let r', env'' = rename_expr env' r in
       (match op with
-      | User_op i ->
-        (match VM.find_opt i env with
-         | Some i' -> (loc, Bop (l', User_op i', r')), env
-         | None    -> (loc, Bop (l', op, r')), env)
-      | _ ->
-        (loc, Bop (l', op, r')), env'')
+       | User_op i ->
+         (match VM.find_opt i env with
+          | Some i' -> (loc, Bop (l', User_op i', r')), env
+          | None -> (loc, Bop (l', op, r')), env)
+       | _ -> (loc, Bop (l', op, r')), env'')
     | Ap (_, l, r) ->
       let l', env'' = rename_expr env l in
       let r', env' = rename_expr env r in
       let i = find_ident l' in
-      (match Base.List.Assoc.find builtins ~equal:Base.String.(=) i with
+      (match Base.List.Assoc.find builtins ~equal:Base.String.( = ) i with
        | Some b -> (loc, Ap (b, l', r')), env'
        | None -> (loc, Ap (fresh_binder (), l', r')), env'')
   ;;

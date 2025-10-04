@@ -63,7 +63,7 @@ and expr =
   | EList of located_expr list
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
-(* we give each function a binder to distinguish between user-defined functions and builtins later on *)
+  (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
   | ETup of located_expr list
 
 type located_pattern = Location.t * pattern

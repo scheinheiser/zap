@@ -2,7 +2,9 @@ open Util
 
 (* type map *)
 module TM = Map.Make (String)
+
 type 'a base_type_map = 'a TM.t
+
 let fresh_tm () = TM.empty
 
 type env =
@@ -55,14 +57,26 @@ let ( &!= ) l r : bool = not (l &= r)
 let builtin_defs loc =
   let open Ast in
   [ (* dec print : string -> (). *)
-    "print", (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)));
-    (* dec (::) : 'a -> 'a list -> 'a list. *)
-    "::", (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, (Prim (PGeneric "'a")))), (loc, List (loc, Prim (PGeneric "'a")))))));
+    "print", (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)))
+  ; (* dec (::) : 'a -> 'a list -> 'a list. *)
+    ( "::"
+    , ( loc
+      , Arrow
+          ( (loc, Prim (PGeneric "'a"))
+          , ( loc
+            , Arrow
+                ( (loc, List (loc, Prim (PGeneric "'a")))
+                , (loc, List (loc, Prim (PGeneric "'a"))) ) ) ) ) )
   ]
 ;;
 
 let fresh_env () =
-  { var_env = fresh_tm (); func_env = fresh_tm (); alias_env = fresh_tm (); record_env = fresh_tm (); variant_env = fresh_tm () }
+  { var_env = fresh_tm ()
+  ; func_env = fresh_tm ()
+  ; alias_env = fresh_tm ()
+  ; record_env = fresh_tm ()
+  ; variant_env = fresh_tm ()
+  }
 ;;
 
 let fresh_tyvar =
@@ -75,12 +89,13 @@ let fresh_tyvar =
 let init_func_env (env : env) (defs : Ast.located_definition list) : env =
   { env with
     func_env =
-      (builtin_defs Location.dummy_loc
+      builtin_defs Location.dummy_loc
       @ List.filter_map
           (function
             | _, Ast.Dec (i, t) -> Some (i, t)
             | _ -> None)
-          defs) |> TM.of_list
+          defs
+      |> TM.of_list
   }
 ;;
 
@@ -105,12 +120,12 @@ let get_value_type (value_env : 'a base_type_map) (i : string) : 'a option =
   TM.find_opt i value_env
 ;;
 
-let value_exists (value_env : 'a base_type_map) (i : string) : bool =
-  TM.mem i value_env
-;;
+let value_exists (value_env : 'a base_type_map) (i : string) : bool = TM.mem i value_env
 
-let add_value_type (value_env: 'a base_type_map) (i: string) (v: 'a): 'a base_type_map =
+let add_value_type (value_env : 'a base_type_map) (i : string) (v : 'a) : 'a base_type_map
+  =
   TM.add i v value_env
+;;
 
 let add_var_type (env : env) (var : string) (ty : Ast.located_ty) : env =
   { env with var_env = add_value_type env.var_env var ty }
@@ -428,7 +443,6 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
          ( Some loc
          , Printf.sprintf "Expected type %s, but got %s." (show_ty t) (show_ty t') ))
     [@@ocamlformat "disable"]
-;;
 
 let rec check_term (env : env) ((loc, t) : Ast.located_term)
   : (Typed_ast.typed_term * env) Base.Or_error.t
@@ -527,7 +541,9 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
     match func_type with
     | None ->
       Error.report_warning
-        (Some loc, Printf.sprintf "Top level definition '%s' lacks accompanying type signature." i);
+        ( Some loc
+        , Printf.sprintf "Top level definition '%s' lacks accompanying type signature." i
+        );
       check_list ~f:get_pattern_type ~rev:false e args
     | Some dec_ty ->
       let rec unify_arg
@@ -541,7 +557,7 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
           let e' = add_var_type env i (ty_loc, l) in
           Ok ((ty_loc, l), e')
         | PConst c ->
-          let (loc', c') = get_const_type c in
+          let loc', c' = get_const_type c in
           if l &= c'
           then Ok ((ty_loc, l), env)
           else

@@ -8,42 +8,42 @@ type assoc =
 
 (* operator map *)
 module OM = Map.Make (String)
-type operator_map = (int * assoc) OM.t
-let fresh_om (): operator_map = OM.empty
 
-let get_bp_with_fixity (op: string) (om: operator_map) : int =
+type operator_map = (int * assoc) OM.t
+
+let fresh_om () : operator_map = OM.empty
+
+let get_bp_with_fixity (op : string) (om : operator_map) : int =
   match OM.find_opt op om with
   | Some (n, R) -> if n = 0 then n else n - 1
   | Some (n, L) -> n
   | None -> 9
+;;
 
 module Lexer : sig
   type t
+
   val get : t -> Token.t list
   val of_lexbuf : Lexing.lexbuf -> t
   val of_string : string -> t
-
   val current : t -> Token.t
   val current_pos : t -> Location.t
-
   val advance : t -> Token.t
   val peek : t -> Token.t
   val skip : t -> am:int -> unit
-
   val matches : t -> Token.token -> bool
   val separated_list : t -> Token.token -> (t -> 'a) -> 'a list
   val list_with_end : t -> (Token.token -> bool) -> (t -> 'a) -> 'a list
-
   val consume : t -> Token.token -> string -> unit
   val consume_any_of : t -> Token.token list -> string -> unit
   val consume_with_pos : t -> Token.token -> string -> Location.t
   val consume_any_of_with_pos : t -> Token.token list -> string -> Location.t
   val consume_with : t -> (Token.token -> 'a option) -> string -> 'a
-
   val gather_user_precs : t -> operator_map * t
 end = struct
   type t = { mutable tokens : Token.t list }
-  let get {tokens} = tokens
+
+  let get { tokens } = tokens
 
   let of_lexbuf (lexbuf : Lexing.lexbuf) : t =
     let rec aux acc =
@@ -58,10 +58,13 @@ end = struct
   ;;
 
   let of_string (s : string) : t = Lexing.from_string s |> of_lexbuf
+
   let current (stream : t) : Token.t =
     match stream.tokens with
     | t :: _ -> t
     | [] -> Location.dummy_loc, Token.EOF
+  ;;
+
   let current_pos (stream : t) : Location.t = current stream |> fst
 
   let advance (stream : t) : Token.t =
@@ -150,45 +153,60 @@ end = struct
     | None -> Error.report_err (Some pos, msg)
   ;;
 
-  let rec gather_user_precs ({tokens}: t) : (int * assoc) OM.t * t  =
+  let rec gather_user_precs ({ tokens } : t) : (int * assoc) OM.t * t =
     let open Token in
     let rec go acc ftokens = function
       | [] -> acc, List.rev ftokens
       | ((s, ATSIGN) as h) :: rest ->
-        let l = {tokens=rest} in
+        let l = { tokens = rest } in
         (match () with
-        | _ when matches l RASSOC ->
-          skip ~am:1 l;
-          let op, assoc, l' = parse_assoc l R s in
-          let acc' = OM.add op assoc acc in
-          go acc' ftokens (get l')
-        | _ when matches l LASSOC ->
-          skip ~am:1 l;
-          let op, assoc, l' = parse_assoc l L s in
-          let acc' = OM.add op assoc acc in
-          go acc' ftokens (get l')
-        | _ ->
-          go acc (h :: ftokens) rest)
-      | h :: t -> 
-        go acc (h :: ftokens) t
-    in 
+         | _ when matches l RASSOC ->
+           skip ~am:1 l;
+           let op, assoc, l' = parse_assoc l R s in
+           let acc' = OM.add op assoc acc in
+           go acc' ftokens (get l')
+         | _ when matches l LASSOC ->
+           skip ~am:1 l;
+           let op, assoc, l' = parse_assoc l L s in
+           let acc' = OM.add op assoc acc in
+           go acc' ftokens (get l')
+         | _ -> go acc (h :: ftokens) rest)
+      | h :: t -> go acc (h :: ftokens) t
+    in
     let l, r = go (fresh_om ()) [] tokens in
-    l, {tokens=r}
-  and parse_assoc (stream: t) (assoc: assoc) (s: Location.t) : string * (int * assoc) * t =
-    let p = consume_with stream (function INT i -> Some i | _ -> None) "Expected precedence after assoc keyword." in
-    if p < 1 || p > 10
-    then 
-      (let loc = Location.combine s (current_pos stream) in
-        Error.report_err (Some loc, "Operator precedence must lie within range 1-10."));
-    let o = consume_with stream (function OP o -> Some o | _ -> None) "Expected operator after precedence." in
-    o, (p, assoc), stream
+    l, { tokens = r }
 
+  and parse_assoc (stream : t) (assoc : assoc) (s : Location.t)
+    : string * (int * assoc) * t
+    =
+    let p =
+      consume_with
+        stream
+        (function
+          | INT i -> Some i
+          | _ -> None)
+        "Expected precedence after assoc keyword."
+    in
+    if p < 1 || p > 10
+    then (
+      let loc = Location.combine s (current_pos stream) in
+      Error.report_err (Some loc, "Operator precedence must lie within range 1-10."));
+    let o =
+      consume_with
+        stream
+        (function
+          | OP o -> Some o
+          | _ -> None)
+        "Expected operator after precedence."
+    in
+    o, (p, assoc), stream
+  ;;
 end
 
 module Parser = struct
   open Token
 
-  let get_bp (t : Token.token) (om: operator_map) : int =
+  let get_bp (t : Token.token) (om : operator_map) : int =
     match t with
     | LPAREN | LBRACK ->
       1 (* we give this a slight bit of precedence for cases like `length (show 10)` *)
@@ -200,8 +218,8 @@ module Parser = struct
     | CONS -> 7
     | OP op ->
       (match OM.find_opt op om with
-      | Some (n, _) -> n
-      | None -> 8)
+       | Some (n, _) -> n
+       | None -> 8)
     | UPPER_IDENT _
     | IDENT _
     | INT _
@@ -284,18 +302,18 @@ module Parser = struct
   ;;
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
-  let rec parse_expr (l : Lexer.t) (limit : int) (om: operator_map) : Ast.located_expr =
-    let (s, _) as left = nud l om in
+  let rec parse_expr (l : Lexer.t) (limit : int) (om : operator_map) : Ast.located_expr =
+    let ((s, _) as left) = nud l om in
     let rec go lf =
-      if (Lexer.current l |> snd |> Fun.flip get_bp om) > limit
+      if Lexer.current l |> snd |> Fun.flip get_bp om > limit
       then (
-        let (_, op_tok) = Lexer.advance l in
+        let _, op_tok = Lexer.advance l in
         go (led l lf (get_bp op_tok om) s op_tok om))
       else lf
     in
     go left
 
-  and nud (l : Lexer.t) (om: operator_map) : Ast.located_expr =
+  and nud (l : Lexer.t) (om : operator_map) : Ast.located_expr =
     match Lexer.advance l with
     | s, INT i -> s, Ast.Const (s, Ast.Int i)
     | s, FLOAT f -> s, Ast.Const (s, Ast.Float f)
@@ -337,7 +355,8 @@ module Parser = struct
     | s, KOP ->
       let pos, next = Lexer.advance l in
       (match next with
-       | o when Token.is_op o -> Location.combine s pos, Ast.Const (s, Ast.Ident (Token.op_to_string o))
+       | o when Token.is_op o ->
+         Location.combine s pos, Ast.Const (s, Ast.Ident (Token.op_to_string o))
        | op ->
          Error.report_err
            ( Some pos
@@ -355,7 +374,7 @@ module Parser = struct
         (lbp : int)
         (s : Location.t)
         (op : Token.token)
-        (om: operator_map)
+        (om : operator_map)
     : Ast.located_expr
     =
     let expr =
@@ -396,7 +415,8 @@ module Parser = struct
           match Lexer.current l with
           | _, COMMA ->
             Lexer.skip ~am:1 l;
-            Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (fun e -> parse_expr e 0 om))
+            Ast.ETup
+              ((loc, e) :: Lexer.separated_list l COMMA (fun e -> parse_expr e 0 om))
           | _, RPAREN -> e
           | pos, tok ->
             Error.report_err
@@ -418,7 +438,17 @@ module Parser = struct
     Lexer.list_with_end
       l
       (function
-        | WILDCARD | LBRACK | LPAREN | IDENT _ | INT _ | FLOAT _ | STRING _ | CHAR _ | BOOL _ | ATSIGN | UNIT -> false
+        | WILDCARD
+        | LBRACK
+        | LPAREN
+        | IDENT _
+        | INT _
+        | FLOAT _
+        | STRING _
+        | CHAR _
+        | BOOL _
+        | ATSIGN
+        | UNIT -> false
         | _ -> true)
       parse_pattern
 
@@ -476,7 +506,7 @@ module Parser = struct
             (Token.show tok) )
   ;;
 
-  let rec parse_term (l : Lexer.t) (om: operator_map) : Ast.located_term =
+  let rec parse_term (l : Lexer.t) (om : operator_map) : Ast.located_term =
     match Lexer.current l with
     | s, LET ->
       Lexer.skip ~am:1 l;
@@ -527,7 +557,7 @@ module Parser = struct
       Location.combine s (Lexer.current_pos l), e
   ;;
 
-  let rec parse_definition (l : Lexer.t) (om: operator_map) : Ast.located_definition =
+  let rec parse_definition (l : Lexer.t) (om : operator_map) : Ast.located_definition =
     match Lexer.current l with
     | _, DEC -> parse_dec l
     | _, DEF -> parse_def l om
@@ -538,7 +568,7 @@ module Parser = struct
             "Expected 'dec' or 'def' keyword to begin a definition, but got '%s'."
             (Token.show tok) )
 
-  and parse_def (l : Lexer.t) (om: operator_map) : Ast.located_definition =
+  and parse_def (l : Lexer.t) (om : operator_map) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEF "Expected 'def' keyword." in
     let n = parse_definition_ident l in
     let args = parse_args l in
@@ -566,7 +596,10 @@ module Parser = struct
       | _, WITH ->
         Lexer.skip l ~am:1;
         let block =
-          Lexer.list_with_end l (fun t -> t = SEMI || SEMISEMI = t) (Fun.flip parse_definition om)
+          Lexer.list_with_end
+            l
+            (fun t -> t = SEMI || SEMISEMI = t)
+            (Fun.flip parse_definition om)
         in
         Some block
       | _, SEMISEMI | _, SEMI -> None
@@ -594,14 +627,27 @@ module Parser = struct
     let e = Lexer.consume_with_pos l DOT "Expected '.' after 'dec' sig." in
     Location.combine s e, Ast.Dec (n, t)
 
-  and parse_definition_ident (l: Lexer.t): Ast.ident = 
+  and parse_definition_ident (l : Lexer.t) : Ast.ident =
     match Lexer.advance l with
     | _, IDENT i -> i
     | _, LPAREN ->
-      let i = Lexer.consume_with l (function OP o -> Some o | t -> Printf.printf "not op: %s\n" (Token.show t); None) "Expected operator after '(' in definition." in
+      let i =
+        Lexer.consume_with
+          l
+          (function
+            | OP o -> Some o
+            | t ->
+              Printf.printf "not op: %s\n" (Token.show t);
+              None)
+          "Expected operator after '(' in definition."
+      in
       Lexer.consume l RPAREN "Expected ')' after operator identifier.";
       i
-    | pos, tok -> Error.report_err (Some pos, Printf.sprintf "Expected identifier or operator, but got '%s'." (Token.show tok))
+    | pos, tok ->
+      Error.report_err
+        ( Some pos
+        , Printf.sprintf "Expected identifier or operator, but got '%s'." (Token.show tok)
+        )
   ;;
 
   let rec parse_tydecl (l : Lexer.t) : Ast.located_ty_decl =
@@ -707,7 +753,7 @@ module Parser = struct
       "Expected an identifier."
   ;;
 
-  let parse_toplvl (l : Lexer.t) (om: operator_map) : Ast.top_lvl =
+  let parse_toplvl (l : Lexer.t) (om : operator_map) : Ast.top_lvl =
     match Lexer.current l with
     | _, ATSIGN -> Ast.TImport (parse_import l)
     | _, DEC -> Ast.TDef (parse_dec l)
@@ -721,7 +767,7 @@ module Parser = struct
             (Token.show tok) )
   ;;
 
-  let parse_program (l : Lexer.t) (om: operator_map) : Ast.program =
+  let parse_program (l : Lexer.t) (om : operator_map) : Ast.program =
     let mod' = parse_module l in
     let prog = Lexer.list_with_end l (( = ) EOF) (Fun.flip parse_toplvl om) in
     let imports =

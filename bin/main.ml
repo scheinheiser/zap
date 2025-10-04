@@ -2,9 +2,10 @@ open Language
 open Parser
 open Rename
 
-let border () = 
+let border () =
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
   print_newline ()
+;;
 
 let () =
   let input = In_channel.(open_text "examples/operators.zap" |> input_all) in

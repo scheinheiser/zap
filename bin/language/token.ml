@@ -127,7 +127,7 @@ let show (t : token) : string =
   | SEMI -> "SEMI"
   | SEMISEMI -> "SEMISEMI"
   | COLON -> "COLON"
-  | EQ ->  "EQ"
+  | EQ -> "EQ"
   | ASSIGNMENT -> "ASSIGNMENT"
   | ARROW -> "ARROW"
   | ATSIGN -> "ATSIGN"
@@ -163,4 +163,3 @@ let op_to_string (t : token) : string =
   | EQ -> "="
   | _ -> ""
 ;;
-

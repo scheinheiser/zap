@@ -1,13 +1,16 @@
 open Util
 
-type 'a base_env = (string * 'a) list
+(* type map *)
+module TM = Map.Make (String)
+type 'a base_type_map = 'a TM.t
+let fresh_tm () = TM.empty
 
 type env =
-  { func_env    : Ast.located_ty base_env
-  ; var_env     : Ast.located_ty base_env
-  ; alias_env   : Ast.located_ty base_env
-  ; record_env  : Ast.located_ty list base_env
-  ; variant_env : (Ast.located_ty base_env) base_env
+  { func_env    : Ast.located_ty base_type_map
+  ; var_env     : Ast.located_ty base_type_map
+  ; alias_env   : Ast.located_ty base_type_map
+  ; record_env  : (Ast.located_ty list) base_type_map
+  ; variant_env : (Ast.located_ty base_type_map) base_type_map
   } [@@ocamlformat "disable"]
 
 (* utils *)
@@ -33,8 +36,8 @@ let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
   let open Ast in
   let is_internal = String.starts_with ~prefix:"t_" in
   match l, r with
-  | Prim (PGeneric lg), Prim (PGeneric rg)
-    when (not @@ is_internal lg) && (not @@ is_internal rg) -> lg = rg
+  (* | Prim (PGeneric lg), Prim (PGeneric rg) *)
+  (*   when (not @@ is_internal lg) && (not @@ is_internal rg) -> true *)
   | Prim (PGeneric _), _ -> true
   | _, Prim (PGeneric _) -> true
   | Prim l', Prim r' -> l' = r'
@@ -54,12 +57,12 @@ let builtin_defs loc =
   [ (* dec print : string -> (). *)
     "print", (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)));
     (* dec (::) : 'a -> 'a list -> 'a list. *)
-    "::", (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, (Prim (PGeneric "'a")))), (loc, List (loc, Prim (PGeneric "'a")))))))
+    "::", (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, (Prim (PGeneric "'a")))), (loc, List (loc, Prim (PGeneric "'a")))))));
   ]
 ;;
 
 let fresh_env () =
-  { var_env = []; func_env = []; alias_env = []; record_env = []; variant_env = [] }
+  { var_env = fresh_tm (); func_env = fresh_tm (); alias_env = fresh_tm (); record_env = fresh_tm (); variant_env = fresh_tm () }
 ;;
 
 let fresh_tyvar =
@@ -72,58 +75,49 @@ let fresh_tyvar =
 let init_func_env (env : env) (defs : Ast.located_definition list) : env =
   { env with
     func_env =
-      builtin_defs Location.dummy_loc
+      (builtin_defs Location.dummy_loc
       @ List.filter_map
           (function
             | _, Ast.Dec (i, t) -> Some (i, t)
             | _ -> None)
-          defs
+          defs) |> TM.of_list
   }
 ;;
 
 let init_type_env (env : env) (types : Ast.located_ty_decl list) : env =
   let alias, record, variant =
-    ( List.filter_map (function | _, (i, Ast.Alias a) -> Some (i, a) | _ -> None) types
-    , List.filter_map (function | _, (i, Ast.Record r) -> let r' = List.map (fun (_, l) -> l) r in Some (i, r') | _ -> None) types
-    , List.filter_map (function | _, (i, Ast.Variant r) -> Some (i, r) | _ -> None) types )
+    ( List.filter_map (function | _, (i, Ast.Alias a) -> Some (i, a) | _ -> None) types |> TM.of_list
+    , List.filter_map (function | _, (i, Ast.Record r) -> let r' = List.map (fun (_, l) -> l) r in Some (i, r') | _ -> None) types |> TM.of_list
+    , List.filter_map (function | _, (i, Ast.Variant r) -> Some (i, TM.of_list r) | _ -> None) types |> TM.of_list )
   in
   { env with alias_env = alias; record_env = record; variant_env = variant } [@@ocamlformat "disable"]
 
 let combine_env (l : env) (r : env) : env =
-  { func_env = l.func_env @ r.func_env
-  ; var_env = l.var_env @ r.var_env
-  ; alias_env = l.alias_env @ r.alias_env
-  ; record_env = l.record_env @ r.record_env
-  ; variant_env = l.variant_env @ r.variant_env
+  { func_env = TM.add_seq (TM.to_seq r.func_env) l.func_env
+  ; var_env = TM.add_seq (TM.to_seq r.var_env) l.var_env
+  ; alias_env = TM.add_seq (TM.to_seq r.alias_env) l.alias_env
+  ; record_env = TM.add_seq (TM.to_seq r.record_env) l.record_env
+  ; variant_env = TM.add_seq (TM.to_seq r.variant_env) l.variant_env
   }
 ;;
 
-let get_value_type (value_env : 'a base_env) (i : string) : 'a option =
-  List.assoc_opt i value_env
+let get_value_type (value_env : 'a base_type_map) (i : string) : 'a option =
+  TM.find_opt i value_env
 ;;
 
-let value_exists (value_env : 'a base_env) (i : string) : bool =
-  List.mem_assoc i value_env
+let value_exists (value_env : 'a base_type_map) (i : string) : bool =
+  TM.mem i value_env
 ;;
 
-let add_value_type (value_env: 'a base_env) (i: string) (v: 'a): 'a base_env =
-  (i, v) :: value_env
-
-let replace_value_type (value_env: 'a base_env) (i: string) (v: 'a) : 'a base_env =
-  let value_env' = List.remove_assoc i value_env in
-  add_value_type value_env' i v
+let add_value_type (value_env: 'a base_type_map) (i: string) (v: 'a): 'a base_type_map =
+  TM.add i v value_env
 
 let add_var_type (env : env) (var : string) (ty : Ast.located_ty) : env =
-  { env with var_env = (var, ty) :: env.var_env }
-;;
-
-let replace_var_type (env : env) (var : string) (ty : Ast.located_ty) : env =
-  let var_env' = List.remove_assoc var env.var_env in
-  add_var_type { env with var_env = var_env' } var ty
+  { env with var_env = add_value_type env.var_env var ty }
 ;;
 
 let add_func_type (env : env) (func : string) (ty : Ast.located_ty) : env =
-  { env with func_env = (func, ty) :: env.func_env }
+  { env with func_env = add_value_type env.func_env func ty }
 ;;
 
 let make_err (e : Error.t) : 'a Base.Or_error.t =
@@ -184,6 +178,7 @@ let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
     | Bool _ -> Prim PBool
     | Atom _ -> Prim PAtom
     | Unit -> Prim PUnit
+    | Ident _ -> Prim (PGeneric (fresh_tyvar ()))
   in
   loc, t
 ;;
@@ -210,11 +205,11 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
   let open Ast in
   let open Base.Or_error in
   match pat with
-  | PConst c -> Ok (get_const_type c, env)
-  | PIdent i ->
+  | PConst (_, Ident i) ->
     let t = loc, Prim (PGeneric (fresh_tyvar ())) in
     let env' = add_var_type env i t in
     Ok (t, env')
+  | PConst c -> Ok (get_const_type c, env)
   | PList l ->
     (match l with
      | [] -> Ok ((loc, Prim (PGeneric (fresh_tyvar ()))), env)
@@ -280,7 +275,6 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
   let open Ast in
   let open Base.Or_error in
   match e with
-  | Const c -> Ok (get_const_type c, (loc, Typed_ast.Const c))
   | EList es ->
     let es' = List.map (fun e -> check_expr env e) es in
     combine_errors es'
@@ -302,22 +296,25 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
                 "Expected type %s, but got '%s' instead."
                 (show_ty ht)
                 (String.concat ", " es_types) )))
-  | Ident i ->
+  | Const (s, Ident i) ->
     (match get_value_type env.var_env i with
      | None ->
-       let rec aux l =
-         match l with
-         | [] -> make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
-         | (_, vs) :: rest ->
-           (match get_value_type vs i with
-            | None ->
-              (match get_value_type env.func_env i with
-               | None -> aux rest
-               | Some t' -> Ok (t', (loc, Typed_ast.Ident i)))
-            | Some t' -> Ok (t', (loc, Typed_ast.Ident i)))
-       in
-       aux env.variant_env
-     | Some t -> Ok (t, (loc, Typed_ast.Ident i)))
+       (match get_value_type env.func_env i with
+       | None ->
+         let rec aux l =
+           match l with
+           | [] -> 
+              Printf.printf "%s => %s\n" i (env.func_env |> TM.to_list |> List.map (fun (s, _) -> s) |> String.concat ", ");
+              make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
+           | (_, vs) :: rest ->
+             (match get_value_type vs i with
+              | None -> aux rest
+              | Some t' -> Ok (t', (loc, Typed_ast.Const (s, Ident i))))
+         in
+         aux @@ TM.to_list env.variant_env
+      | Some t -> Ok (t, (loc, Typed_ast.Const (s, Ident i))))
+     | Some t -> Ok (t, (loc, Typed_ast.Const (s, Ident i))))
+  | Const c -> Ok (get_const_type c, (loc, Typed_ast.Const c))
   | ETup contents ->
     List.map (fun e -> check_expr env e) contents
     |> combine_errors
@@ -403,7 +400,7 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
         | None -> make_err (Some loc, Printf.sprintf "Undefined operator - %s." i)
         | Some ((_, esig) as fsig) ->
           (match flatten_arrow fsig with
-           | [ (_, lt); (_, rt); ret ] ->
+           | (_, lt) :: (_, rt) :: ret ->
              (match () with
               | _ when lt &!= t ->
                 make_err
@@ -419,7 +416,7 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
                       "Expected type %s, but got %s."
                       (show_ty rt)
                       (show_ty t') )
-              | _ -> Ok (ret, (loc, Typed_ast.Bop (l', op, r'))))
+              | _ -> Ok (build_arrow ret, (loc, Typed_ast.Bop (l', op, r'))))
            | _ ->
              make_err
                ( Some loc
@@ -540,11 +537,11 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
         : (Ast.located_ty * env) Base.Or_error.t
         =
         match r with
-        | PIdent i ->
+        | PConst (_, Ident i) ->
           let e' = add_var_type env i (ty_loc, l) in
           Ok ((ty_loc, l), e')
         | PConst c ->
-          let loc', c' = get_const_type c in
+          let (loc', c') = get_const_type c in
           if l &= c'
           then Ok ((ty_loc, l), env)
           else

@@ -1,6 +1,8 @@
 open Util
 
-type token =
+type t = Location.t * token
+
+and token =
   | INT of int
   | FLOAT of float
   | STRING of string
@@ -15,6 +17,8 @@ type token =
   | WHEN
   | WITH
   | WITHOUT
+  | RASSOC
+  | LASSOC
   | IF
   | THEN
   | ELSE
@@ -28,7 +32,6 @@ type token =
   | MODULE
   | IMPORT
   | AND
-  | NOT
   | OR
   | LT
   | GT
@@ -60,8 +63,6 @@ type token =
   | WILDCARD
   | EOF
 
-type t = Location.t * token
-
 let show_prim = function
   | Ast.PInt -> "int"
   | Ast.PFloat -> "float"
@@ -78,62 +79,63 @@ let show (t : token) : string =
   match t with
   | INT i -> sprintf "INT %d" i
   | FLOAT f -> sprintf "FLOAT %.5f" f
-  | STRING s -> sprintf "STRING %s" s
+  | STRING s -> sprintf "STRING \"%s\"" s
   | CHAR c -> sprintf "CHAR %c" c
   | BOOL b -> sprintf "BOOL %b" b
-  | UNIT -> sprintf "UNIT"
+  | UNIT -> "UNIT"
   | TY_PRIM t -> sprintf "TY_PRIM %s" (show_prim t)
   | IDENT i -> sprintf "IDENT %s" i
   | UPPER_IDENT i -> sprintf "UPPER_IDENT %s" i
   | OP o -> sprintf "OP %s" o
-  | KOP -> sprintf "KOP"
-  | WHEN -> sprintf "WHEN"
-  | WITH -> sprintf "WITH"
-  | WITHOUT -> sprintf "WITHOUT"
-  | IF -> sprintf "IF"
-  | THEN -> sprintf "THEN"
-  | ELSE -> sprintf "ELSE"
-  | DEC -> sprintf "DEC"
-  | TYPE -> sprintf "TYPE"
-  | TILDE -> sprintf "TILDE"
-  | DEF -> sprintf "DEF"
-  | LAM -> sprintf "LAM"
-  | LET -> sprintf "LET"
-  | IN -> sprintf "IN"
-  | MODULE -> sprintf "MODULE"
-  | IMPORT -> sprintf "IMPORT"
-  | AND -> sprintf "AND"
-  | NOT -> sprintf "NOT"
-  | OR -> sprintf "OR"
-  | LT -> sprintf "LT"
-  | GT -> sprintf "GT"
-  | LTE -> sprintf "LTE"
-  | GTE -> sprintf "GTE"
-  | NE -> sprintf "NE"
-  | PLUS -> sprintf "PLUS"
-  | MINUS -> sprintf "MINUS"
-  | DIV -> sprintf "DIV"
-  | MUL -> sprintf "MUL"
-  | CONS -> sprintf "CONS"
-  | PIPE -> sprintf "PIPE"
-  | LBRACE -> sprintf "LBRACE"
-  | RBRACE -> sprintf "RBRACE"
-  | LPAREN -> sprintf "LPAREN"
-  | RPAREN -> sprintf "RPAREN"
-  | LBRACK -> sprintf "LBRACK"
-  | RBRACK -> sprintf "RBRACK"
-  | SEMI -> sprintf "SEMI"
-  | SEMISEMI -> sprintf "SEMISEMI"
-  | COLON -> sprintf "COLON"
-  | EQ -> sprintf "EQ"
-  | ASSIGNMENT -> sprintf "ASSIGNMENT"
-  | ARROW -> sprintf "ARROW"
-  | ATSIGN -> sprintf "ATSIGN"
-  | DOT -> sprintf "DOT"
-  | COMMA -> sprintf "COMMA"
-  | BTICK -> sprintf "BTICK"
-  | WILDCARD -> sprintf "WILDCARD"
-  | EOF -> sprintf "EOF"
+  | KOP -> "KOP"
+  | WHEN -> "WHEN"
+  | WITH -> "WITH"
+  | WITHOUT -> "WITHOUT"
+  | RASSOC -> "RASSOC"
+  | LASSOC -> "LASSOC"
+  | IF -> "IF"
+  | THEN -> "THEN"
+  | ELSE -> "ELSE"
+  | DEC -> "DEC"
+  | TYPE -> "TYPE"
+  | TILDE -> "TILDE"
+  | DEF -> "DEF"
+  | LAM -> "LAM"
+  | LET -> "LET"
+  | IN -> "IN"
+  | MODULE -> "MODULE"
+  | IMPORT -> "IMPORT"
+  | AND -> "AND"
+  | OR -> "OR"
+  | LT -> "LT"
+  | GT -> "GT"
+  | LTE -> "LTE"
+  | GTE -> "GTE"
+  | NE -> "NE"
+  | PLUS -> "PLUS"
+  | MINUS -> "MINUS"
+  | DIV -> "DIV"
+  | MUL -> "MUL"
+  | CONS -> "CONS"
+  | PIPE -> "PIPE"
+  | LBRACE -> "LBRACE"
+  | RBRACE -> "RBRACE"
+  | LPAREN -> "LPAREN"
+  | RPAREN -> "RPAREN"
+  | LBRACK -> "LBRACK"
+  | RBRACK -> "RBRACK"
+  | SEMI -> "SEMI"
+  | SEMISEMI -> "SEMISEMI"
+  | COLON -> "COLON"
+  | EQ ->  "EQ"
+  | ASSIGNMENT -> "ASSIGNMENT"
+  | ARROW -> "ARROW"
+  | ATSIGN -> "ATSIGN"
+  | DOT -> "DOT"
+  | COMMA -> "COMMA"
+  | BTICK -> "BTICK"
+  | WILDCARD -> "WILDCARD"
+  | EOF -> "EOF"
 ;;
 
 let is_op (t : token) : bool =

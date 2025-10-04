@@ -50,8 +50,6 @@ def failingUnification n :=
 
 dec patTest : (int, bool, string) -> int list -> string -> ().
 def patTest (5, false, "hi") (10 :: rest) five :=
-  push 10 in
-  pop false in
   print five
 ;;
 

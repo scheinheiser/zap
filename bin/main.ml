@@ -7,10 +7,13 @@ let border () =
   print_newline ()
 
 let () =
-  let input = In_channel.(open_text "examples/test.zap" |> input_all) in
-  (* let input = "length (show [10])" in *)
+  let input = In_channel.(open_text "examples/operators.zap" |> input_all) in
+  (* let input = "a + b + c" in *)
+  (* print_endline input; *)
   let l = Lexer.of_string input in
-  let res' = Parser.parse_program l in
+  let precs, l' = Lexer.gather_user_precs l in
+  (* Lexer.get l' |> List.map (fun (_, t) -> t) |> List.map Token.show |> String.concat ", " |> print_endline; *)
+  let res' = Parser.parse_program l' precs in
   let res = Alpha.rename_program res' in
   Ast.pp_program Format.std_formatter res;
   border ();

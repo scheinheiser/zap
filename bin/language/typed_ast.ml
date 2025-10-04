@@ -12,7 +12,6 @@ and located_expr = Location.t * expr
 and expr =
   | Const of Ast.located_const
   | EList of typed_expr list
-  | Ident of ident
   | ETup of typed_expr list
   | Bop of typed_expr * Ast.binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
@@ -41,7 +40,6 @@ type program =
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> Ast.pp_const out c
-  | Ident i -> Ast.pp_ident out i
   | ETup t ->
     Format.fprintf
       out

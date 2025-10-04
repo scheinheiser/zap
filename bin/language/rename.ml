@@ -1,11 +1,15 @@
 open Util
 
-module Alpha = struct
+module Alpha : sig
+  val user_bind : int
+  val find_ident : Ast.located_expr -> string
+  val rename_program : Ast.program -> Ast.program
+end = struct
   module VM = Map.Make (String)
 
   (* any binder above this value is user defined *)
   let user_bind = 1
-  let builtins = [ "print", 0 ; "::", 1]
+  let builtins = [ "print", 0 ; "::", 1 ]
 
   let fresh_binder =
     let i = ref 1 in
@@ -41,9 +45,10 @@ module Alpha = struct
   let rec find_ident ((_, e) : Ast.located_expr) : string =
     let open Ast in
     match e with
-    | Ident i -> i
+    | Const (_, Ident i) -> i
     | Ap (_, l, _) -> find_ident l
-    | _ -> raise (Error.InternalError "Internal error - malformed function application.")
+    | _ -> ""
+    (* | b -> Error.report_err (Some loc, Format.asprintf "Expected function identifier, but got %a." Ast.pp_expr (loc, b)) *)
   ;;
 
   let rec rename_pattern (env : string VM.t) ((loc, pat) : Ast.located_pattern)
@@ -51,11 +56,11 @@ module Alpha = struct
     =
     let open Ast in
     match pat with
-    | PConst _ -> (loc, pat), env
-    | PIdent i ->
+    | PConst (s, Ident i) ->
       let i' = fresh_alpha i in
       let env' = VM.add i i' env in
-      (loc, PIdent i'), env'
+      (loc, PConst (s, Ident i')), env'
+    | PConst _ -> (loc, pat), env
     | PWild -> (loc, pat), env
     | PCons (l, r) ->
       let l', env' = rename_pattern env l in
@@ -74,11 +79,11 @@ module Alpha = struct
     =
     let open Ast in
     match expr with
-    | Const _ -> (loc, expr), env
-    | Ident i ->
+    | Const (s, Ident i) ->
       (match VM.find_opt i env with
-       | Some i' -> Printf.printf "%s: %s\n" i i'; (loc, Ident i'), env
-       | None -> (loc, Ident i), env)
+       | Some i' -> (loc, Const (s, Ident i')), env
+       | None    -> (loc, Const (s, Ident i)), env)
+    | Const _ -> (loc, expr), env
     | EList items ->
       let items', env' = rename_list ~f:rename_expr env items in
       (loc, EList items'), env'
@@ -88,12 +93,18 @@ module Alpha = struct
     | Bop (l, op, r) ->
       let l', env' = rename_expr env l in
       let r', env'' = rename_expr env' r in
-      (loc, Bop (l', op, r')), env''
+      (match op with
+      | User_op i ->
+        (match VM.find_opt i env with
+         | Some i' -> (loc, Bop (l', User_op i', r')), env
+         | None    -> (loc, Bop (l', op, r')), env)
+      | _ ->
+        (loc, Bop (l', op, r')), env'')
     | Ap (_, l, r) ->
-      let i = find_ident l in
       let l', env'' = rename_expr env l in
       let r', env' = rename_expr env r in
-      (match List.assq_opt i builtins with
+      let i = find_ident l' in
+      (match Base.List.Assoc.find builtins ~equal:Base.String.(=) i with
        | Some b -> (loc, Ap (b, l', r')), env'
        | None -> (loc, Ap (fresh_binder (), l', r')), env'')
   ;;

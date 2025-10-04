@@ -38,6 +38,7 @@ and const =
   | Bool of bool
   | Atom of ident
   | Unit
+  | Ident of ident
 
 type binop =
   | Add
@@ -60,7 +61,6 @@ type located_expr = Location.t * expr
 and expr =
   | Const of located_const
   | EList of located_expr list
-  | Ident of ident
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
 (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
@@ -70,7 +70,6 @@ type located_pattern = Location.t * pattern
 
 and pattern =
   | PConst of located_const
-  | PIdent of ident
   | PWild (* wildcard, '_' *)
   | PCons of located_pattern * located_pattern
   | PList of located_pattern list
@@ -186,6 +185,7 @@ let pp_const out ((_, c) : located_const) =
   | Bool b -> Format.fprintf out "%b" b
   | Atom a -> Format.fprintf out "%@%s" a
   | Unit -> Format.fprintf out "()"
+  | Ident i -> pp_ident out i
 ;;
 
 let pp_binop out (b : binop) =
@@ -212,7 +212,6 @@ let pp_binop out (b : binop) =
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
-  | Ident i -> pp_ident out i
   | ETup t ->
     Format.fprintf
       out
@@ -233,7 +232,6 @@ let rec pp_expr out ((_, e) : located_expr) =
 let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
-  | PIdent i -> pp_ident out i
   | PWild -> Format.fprintf out "_"
   | PList ps ->
     Format.fprintf

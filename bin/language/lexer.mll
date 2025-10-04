@@ -28,7 +28,8 @@
     ("else", ELSE);
     ("let", LET);
     ("in", IN);
-    ("not", NOT);
+    ("rassoc", RASSOC);
+    ("lassoc", LASSOC);
     ("module", MODULE);
     ("import", IMPORT);
     ("int", TY_PRIM Ast.PInt);

@@ -6,19 +6,12 @@ type assoc =
   | R
   | L
 
-(* operator map *)
 module OM = Map.Make (String)
 
 type operator_map = (int * assoc) OM.t
 
 let fresh_om () : operator_map = OM.empty
 
-let get_bp_with_fixity (op : string) (om : operator_map) : int =
-  match OM.find_opt op om with
-  | Some (n, R) -> if n = 0 then n else n - 1
-  | Some (n, L) -> n
-  | None -> 9
-;;
 
 module Lexer : sig
   type t
@@ -231,6 +224,14 @@ module Parser = struct
     | ATSIGN -> 9
     | EOF -> -1
     | _ -> 0
+  ;;
+
+  (* returns operator precedence, accounting for fixity/associativity *)
+  let get_bp_with_fixity (op : string) (om : operator_map) : int =
+    match OM.find_opt op om with
+    | Some (n, R) -> n - 1
+    | Some (n, L) -> n
+    | None -> 8
   ;;
 
   let parse_upper_ident (l : Lexer.t) : Ast.ident =
@@ -767,7 +768,8 @@ module Parser = struct
             (Token.show tok) )
   ;;
 
-  let parse_program (l : Lexer.t) (om : operator_map) : Ast.program =
+  let parse_program (l' : Lexer.t) : Ast.program =
+    let om, l = Lexer.gather_user_precs l' in
     let mod' = parse_module l in
     let prog = Lexer.list_with_end l (( = ) EOF) (Fun.flip parse_toplvl om) in
     let imports =

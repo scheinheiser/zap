@@ -50,8 +50,6 @@ end = struct
     | _ -> ""
   ;;
 
-  (* | b -> Error.report_err (Some loc, Format.asprintf "Expected function identifier, but got %a." Ast.pp_expr (loc, b)) *)
-
   let rec rename_pattern (env : string VM.t) ((loc, pat) : Ast.located_pattern)
     : Ast.located_pattern * string VM.t
     =

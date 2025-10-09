@@ -36,7 +36,7 @@ let rec build_arrow = function
 (* custom equality function for types that respects type variables *)
 let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
   let open Ast in
-  let is_internal = String.starts_with ~prefix:"t_" in
+  (* let is_internal = String.starts_with ~prefix:"t_" in *)
   match l, r with
   (* | Prim (PGeneric lg), Prim (PGeneric rg) *)
   (*   when (not @@ is_internal lg) && (not @@ is_internal rg) -> true *)
@@ -49,9 +49,8 @@ let rec ( &= ) (l : Ast.ty) (r : Ast.ty) : bool =
   | Udt l', Udt r' -> l' = r'
   | Arrow ((_, l1'), (_, r1')), Arrow ((_, l2'), (_, r2')) -> l1' &= l2' && r1' &= r2'
   | _ -> false
-;;
 
-let ( &!= ) l r : bool = not (l &= r)
+and ( &!= ) l r : bool = not (l &= r)
 
 (* we supply the location for more accurate type errors *)
 let builtin_defs loc =
@@ -59,15 +58,8 @@ let builtin_defs loc =
   [ (* dec print : string -> (). *)
     "print", (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)))
   ; (* dec (::) : 'a -> 'a list -> 'a list. *)
-    ( "::"
-    , ( loc
-      , Arrow
-          ( (loc, Prim (PGeneric "'a"))
-          , ( loc
-            , Arrow
-                ( (loc, List (loc, Prim (PGeneric "'a")))
-                , (loc, List (loc, Prim (PGeneric "'a"))) ) ) ) ) )
-  ]
+    ( "::", (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, Prim (PGeneric "'a"))), (loc, List (loc, Prim (PGeneric "'a"))))))))
+  ] [@@ocamlformat "disable"]
 ;;
 
 let fresh_env () =
@@ -107,15 +99,6 @@ let init_type_env (env : env) (types : Ast.located_ty_decl list) : env =
   in
   { env with alias_env = alias; record_env = record; variant_env = variant } [@@ocamlformat "disable"]
 
-let combine_env (l : env) (r : env) : env =
-  { func_env = TM.add_seq (TM.to_seq r.func_env) l.func_env
-  ; var_env = TM.add_seq (TM.to_seq r.var_env) l.var_env
-  ; alias_env = TM.add_seq (TM.to_seq r.alias_env) l.alias_env
-  ; record_env = TM.add_seq (TM.to_seq r.record_env) l.record_env
-  ; variant_env = TM.add_seq (TM.to_seq r.variant_env) l.variant_env
-  }
-;;
-
 let get_value_type (value_env : 'a base_type_map) (i : string) : 'a option =
   TM.find_opt i value_env
 ;;
@@ -139,7 +122,6 @@ let make_err (e : Error.t) : 'a Base.Or_error.t =
   Base.Or_error.error_string @@ Error.format_err e
 ;;
 
-(* main stuff *)
 let check_list
       ~(f : env -> 'a -> ('b * env) Base.Or_error.t)
       ~(rev : bool)
@@ -182,6 +164,7 @@ let check_list2
   go [] env l r
 ;;
 
+(* main stuff *)
 let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
   let open Ast in
   let t =
@@ -531,7 +514,12 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
               Some (loc', (i', args', when_block', body', with_block')))
           ds
       in
-      let env' = init_func_env (fresh_env ()) ds |> combine_env env in
+      let rec go acc = function
+        | [] -> acc
+        | (_, Dec (i, t)) :: tl -> go (TM.add i t acc) tl
+        | _ :: tl -> go acc tl
+      in
+      let env' = {env with func_env = go env.func_env ds} in
       let ds'', env'' = check_list ~f:check_def ~rev:true env' ds' in
       combine_errors ds'' >>| fun defs -> List.flatten defs, env''
   in

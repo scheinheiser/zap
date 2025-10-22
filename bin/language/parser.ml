@@ -571,6 +571,12 @@ module Parser = struct
 
   and parse_def (l : Lexer.t) (om : operator_map) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEF "Expected 'def' keyword." in
+    (* checking if it's a def*, multi-def style function or just an ordinary function *)
+    let hsd =
+      match Lexer.current l with
+      | _, MUL -> Lexer.skip ~am:1 l; true
+      | _ -> false
+    in
     let n = parse_definition_ident l in
     let args = parse_args l in
     let when_block =
@@ -618,15 +624,21 @@ module Parser = struct
         [ SEMISEMI; SEMI ]
         "Expected ';;' or ';' to end function definition."
     in
-    Location.combine s e, Ast.Def (n, args, when_block, body, with_block)
+    Location.combine s e, Ast.Def (hsd, n, args, when_block, body, with_block)
 
   and parse_dec (l : Lexer.t) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEC "Expected 'dec' keyword." in
+    (* checking if it's a def*, multi-def style function or just an ordinary function *)
+    let hsd =
+      match Lexer.current l with
+      | _, MUL -> Lexer.skip ~am:1 l; true
+      | _ -> false
+    in
     let n = parse_definition_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
     let t = parse_ty l in
     let e = Lexer.consume_with_pos l DOT "Expected '.' after 'dec' sig." in
-    Location.combine s e, Ast.Dec (n, t)
+    Location.combine s e, Ast.Dec (hsd, n, t)
 
   and parse_definition_ident (l : Lexer.t) : Ast.ident =
     match Lexer.advance l with

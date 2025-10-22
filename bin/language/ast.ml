@@ -102,9 +102,10 @@ and tdecl_type =
 type located_definition = Location.t * definition
 
 and definition =
-  | Dec of func * located_ty
+  | Dec of bool * func * located_ty
   | Def of
-      func
+      bool
+      * func
       * located_pattern list
       * located_term option
       * located_term list
@@ -359,8 +360,8 @@ let pp_when_block out (when_block : located_term option) =
 
 let rec pp_definition out ((_, def) : located_definition) =
   match def with
-  | Dec (f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_ty ts
-  | Def (f, args, when_block, body, with_block) ->
+  | Dec (_, f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_ty ts
+  | Def (_, f, args, when_block, body, with_block) ->
     Format.fprintf
       out
       "(de@[<v>f %s (%a)@,%a@,%a@,%a@])"

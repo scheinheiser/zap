@@ -26,8 +26,8 @@ type myRecord :=
   }
 
 dec filter : ('a -> bool) -> ['a] -> ['a].
-def filter _ [] := [];
-def filter p (x :: xs) :=
+def* filter _ [] := [];
+def* filter p (x :: xs) :=
   if p x
   then x :: filter p xs
   else filter p xs
@@ -35,26 +35,26 @@ def filter p (x :: xs) :=
 
 % pattern guards
 dec cfilter : ('a -> bool) -> ['a] -> ['a].
-def cfilter _ [] := [];
-def cfilter p (x :: xs) : when (p x) = x :: cfilter p xs;
-def cfilter p (_ :: xs) := cfilter p xs
+def* cfilter _ [] := [];
+def* cfilter p (x :: xs) : when (p x) = x :: cfilter p xs;
+def* cfilter p (_ :: xs) := cfilter p xs
 ;;
 
 % block pattern guards
 dec clampNums : [int] -> [int].
-def clampNums [] := [];
-def clampNums (x :: xs) := x :: clampNums xs;
-def clampNums (x :: xs)
+def* clampNums [] := [];
+def* clampNums (x :: xs) := x :: clampNums xs;
+def* clampNums (x :: xs)
   : when {
     x < 10 && x > 0
   } = x :: clampNums xs;
-def clampNums (_ :: xs) := clampNums xs
+def* clampNums (_ :: xs) := clampNums xs
 ;;
 
 dec getLast : ['a] -> 'a.
-def getLast [] := fail "empty list";
-def getLast [x] := x;
-def getLast (_ :: xs) := getLast xs
+def* getLast [] := fail "empty list";
+def* getLast [x] := x;
+def* getLast (_ :: xs) := getLast xs
 ;;
 
 % eta reduction

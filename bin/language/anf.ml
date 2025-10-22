@@ -22,12 +22,13 @@ module ANF = struct
     | Bop of ident * value * Ast.binop * value * t
     | Ap of ident * binder * value * value * t
     | Let of ident * Ast.ty * value * t
-    | Grouping of ident * t list
+    | Grouping of ident * t
     | If of value * t * t option
     | Join of ident * ident option * t * t
     | Jump of ident * value option
+    | Stmt of t * t
 
-  type definition = ident * Ast.ty * t option * t list (* top level functions *)
+  type definition = ident * Ast.ty * t option * t list
   type program = module_name * Ast.ty_decl list * definition list
 
   let pp_value out (v: value) =
@@ -54,17 +55,18 @@ module ANF = struct
     | Let (i, t, v, n)
       -> Format.fprintf out "let %s: %a = %a in %a" i Ast.pp_ty (Location.dummy_loc, t) pp_value v pp_t n
     | Grouping (i, vs)
-      -> Format.fprintf out "let %s = @[<v>%a@] in" i Format.(pp_print_list ~pp_sep:pp_print_cut pp_t) vs
+      -> Format.fprintf out "let %s = {@[<v>  %a@,@]} in" i pp_t vs
     | If (cond, t, f)
       -> Format.fprintf out "if@[<v> %a@,then %a@,else %a@]" pp_value cond pp_t t Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_t) f
     | Jump (i, v) -> Format.fprintf out "jump %s(%a)" i Format.(pp_print_option ~none:(fun out () -> fprintf out "") pp_value) v
     | Join (i, v, b, n)
       -> 
       let pp_string out i = Format.fprintf out "%s" i in
-      Format.fprintf out "join@ %s(%a)@ =@ %a in@ %a" i Format.(pp_print_option ~none:(fun out () -> fprintf out "") pp_string) v pp_t b pp_t n
+      Format.fprintf out "join %s(%a) = %a in@,%a" i Format.(pp_print_option ~none:(fun out () -> fprintf out "") pp_string) v pp_t b pp_t n
+    | Stmt (l, r) -> Format.fprintf out "%a %a" pp_t l pp_t r
 
   let pp_definition out ((i, t, wb, body) : definition) =
-    Format.fprintf out "let %s: %a (%a) = %a" i Ast.pp_ty (Location.dummy_loc, t) Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_t) wb Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_t) body
+    Format.fprintf out "le@[<v>t %s: %a (%a) =@,%a@]@.in" i Ast.pp_ty (Location.dummy_loc, t) Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_t) wb Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_t) body
 
   let pp_program out ((mod_name, decls, defs) : program) =
     let decls = List.map (fun d -> (Location.dummy_loc, d)) decls in
@@ -137,14 +139,20 @@ module ANF = struct
       | Some f' -> Join (i, Some n, f (Ident n), If (cond, of_typed_term t go, Some (of_typed_term f' go))))
     | TGrouping ts ->
       let i = fresh_temp () in
-      Grouping (i, List.map (Fun.flip of_typed_term f) ts)
+      let rec go ln = function
+        | [] -> f (Ident ln)
+        | h :: t ->
+          let i = fresh_temp () in
+          Stmt (of_typed_term h f, go i t)
+      in
+      Grouping (i, go i ts)
     | _ -> failwith "todo"
 
   let rec of_typed_program ((mod_name, _, decls, defs): Typed_ast.program) : program = 
     let decls = List.map (fun (_, t) -> t) decls in
     let defs = List.map of_typed_definition defs in
     (mod_name, decls, defs)
-  and of_typed_definition ((_, (i, (_, ty), _, when_block, body)) : Typed_ast.located_definition) : definition =
+  and of_typed_definition ((_, (_, i, (_, ty), _, when_block, body)) : Typed_ast.located_definition) : definition =
     let when_block = Base.Option.map when_block ~f:(Fun.flip of_typed_term mk_ret) in
     let body = List.map (Fun.flip of_typed_term mk_ret) body in
     i, ty, when_block, body

@@ -28,10 +28,10 @@ end = struct
   let fresh_env () = VM.empty
 
   let rename_list
-        ~(f : string VM.t -> 'a -> 'a * string VM.t)
-        (env : string VM.t)
+        ~(f : (string * bool) VM.t -> 'a -> 'a * (string * bool) VM.t)
+        (env : (string * bool) VM.t)
         (l : 'a list)
-    : 'a list * string VM.t
+    : 'a list * (string * bool) VM.t
     =
     let rec go acc e = function
       | [] -> List.rev acc, e
@@ -50,14 +50,14 @@ end = struct
     | _ -> ""
   ;;
 
-  let rec rename_pattern (env : string VM.t) ((loc, pat) : Ast.located_pattern)
-    : Ast.located_pattern * string VM.t
+  let rec rename_pattern (env : (string * bool) VM.t) ((loc, pat) : Ast.located_pattern)
+    : Ast.located_pattern * (string * bool) VM.t
     =
     let open Ast in
     match pat with
     | PConst (s, Ident i) ->
       let i' = fresh_alpha i in
-      let env' = VM.add i i' env in
+      let env' = VM.add i (i', false) env in
       (loc, PConst (s, Ident i')), env'
     | PConst _ -> (loc, pat), env
     | PWild -> (loc, pat), env
@@ -73,14 +73,14 @@ end = struct
       (loc, PTup items'), env'
   ;;
 
-  let rec rename_expr (env : string VM.t) ((loc, expr) : Ast.located_expr)
-    : Ast.located_expr * string VM.t
+  let rec rename_expr (env : (string * bool) VM.t) ((loc, expr) : Ast.located_expr)
+    : Ast.located_expr * (string * bool) VM.t
     =
     let open Ast in
     match expr with
     | Const (s, Ident i) ->
       (match VM.find_opt i env with
-       | Some i' -> (loc, Const (s, Ident i')), env
+       | Some (i', _) -> (loc, Const (s, Ident i')), env
        | None -> (loc, Const (s, Ident i)), env)
     | Const _ -> (loc, expr), env
     | EList items ->
@@ -95,7 +95,7 @@ end = struct
       (match op with
        | User_op i ->
          (match VM.find_opt i env with
-          | Some i' -> (loc, Bop (l', User_op i', r')), env
+          | Some (i', _) -> (loc, Bop (l', User_op i', r')), env
           | None -> (loc, Bop (l', op, r')), env)
        | _ -> (loc, Bop (l', op, r')), env'')
     | Ap (_, l, r) ->
@@ -107,8 +107,8 @@ end = struct
        | None -> (loc, Ap (fresh_binder (), l', r')), env'')
   ;;
 
-  let rec rename_term (env : string VM.t) ((loc, term) : Ast.located_term)
-    : Ast.located_term * string VM.t
+  let rec rename_term (env : (string * bool) VM.t) ((loc, term) : Ast.located_term)
+    : Ast.located_term * (string * bool) VM.t
     =
     let open Ast in
     match term with
@@ -120,7 +120,7 @@ end = struct
       if VM.exists (fun i'' _ -> i'' = i) env
       then Error.report_warning (Some loc, Printf.sprintf "Identifier '%s' is shadowed." i);
       let expr', env' = rename_term env expr in
-      let env'' = VM.add i i' env' in
+      let env'' = VM.add i (i', false) env' in
       (loc, TLet (i', t, expr')), env''
     | TGrouping g ->
       let g', env' = rename_list ~f:rename_term env g in
@@ -142,31 +142,32 @@ end = struct
       (loc, TLam (ps', t')), env''
   ;;
 
-  let rec rename_definition (env : string VM.t) ((loc, d) : Ast.located_definition)
-    : Ast.located_definition * string VM.t
+  let rec rename_definition (env : (string * bool) VM.t) ((loc, d) : Ast.located_definition)
+    : Ast.located_definition * (string * bool) VM.t
     =
     let open Ast in
     match d with
-    | Dec (i, sig') ->
+    | Dec (hsd, i, sig') ->
       let i', env' =
         if i = "main"
         then i, env
         else (
           let i' = fresh_alpha i in
-          let env' = VM.add i i' env in
+          let env' = VM.add i (i', hsd) env in
           i', env')
       in
-      (loc, Dec (i', sig')), env'
-    | Def (i, args, when_block, body, with_block) ->
+      (loc, Dec (hsd, i', sig')), env'
+    | Def (hsd, i, args, when_block, body, with_block) ->
       let i', env =
         if i = "main"
         then i, env
         else (
           match VM.find_opt i env with
-          | Some i' -> i', env
-          | None ->
+          | Some (i', true) when hsd -> i', env
+          | Some (i', false) when not hsd -> i', env
+          | _ ->
             let i' = fresh_alpha i in
-            let env' = VM.add i i' env in
+            let env' = VM.add i (i', hsd) env in
             i', env')
       in
       let args', env = rename_list ~f:rename_pattern env args in
@@ -183,7 +184,7 @@ end = struct
        | None -> None, env)
       |> fun (with_block', env) ->
       let body', env = rename_list ~f:rename_term env body in
-      (loc, Def (i', args', when_block', body', with_block')), env
+      (loc, Def (hsd, i', args', when_block', body', with_block')), env
   ;;
 
   let rename_program ((prog_name, imps, tys, defs) : Ast.program) : Ast.program =

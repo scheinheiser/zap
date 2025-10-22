@@ -84,7 +84,7 @@ let init_func_env (env : env) (defs : Ast.located_definition list) : env =
       builtin_defs Location.dummy_loc
       @ List.filter_map
           (function
-            | _, Ast.Dec (i, t) -> Some (i, t)
+            | _, Ast.Dec (_, i, t) -> Some (i, t)
             | _ -> None)
           defs
       |> TM.of_list
@@ -377,7 +377,7 @@ let rec check_expr (env : env) ((loc, e) : Ast.located_expr)
        (match t' with
         | List (_, list_type) ->
           if t &= list_type
-          then Ok ((ty_loc, list_type), (loc, Typed_ast.Bop (l', op, r')))
+          then Ok ((ty_loc, t'), (loc, Typed_ast.Bop (l', op, r')))
           else
             make_err
               ( Some loc
@@ -496,7 +496,7 @@ let rec check_term (env : env) ((loc, t) : Ast.located_term)
     Ok ((tys', (loc, Typed_ast.TLam (args, body'))), env)
 ;;
 
-let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
+let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block))
   : (Typed_ast.located_definition list * env) Base.Or_error.t
   =
   let open Ast in
@@ -510,13 +510,13 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
         List.filter_map
           (function
             | _, Dec _ -> None
-            | loc', Def (i', args', when_block', body', with_block') ->
-              Some (loc', (i', args', when_block', body', with_block')))
+            | loc', Def (hsd, i', args', when_block', body', with_block') ->
+              Some (loc', (hsd, i', args', when_block', body', with_block')))
           ds
       in
       let rec go acc = function
         | [] -> acc
-        | (_, Dec (i, t)) :: tl -> go (TM.add i t acc) tl
+        | (_, Dec (_, i, t)) :: tl -> go (TM.add i t acc) tl
         | _ :: tl -> go acc tl
       in
       let env' = {env with func_env = go env.func_env ds} in
@@ -611,12 +611,12 @@ let rec check_def (env : env) (loc, (i, args, when_block, body, with_block))
   match func_type with
   | None ->
     let env'' = add_func_type env' i (ret_loc, ret) in
-    let d = loc, (i, (ret_loc, ret), args, wb, typed_body) in
+    let d = loc, (hsd, i, (ret_loc, ret), args, wb, typed_body) in
     Ok (d :: with_block', env'')
   | Some ((_, t) as dec_ty) when t &= ret ->
     check_type env' dec_ty
     >>= fun _ ->
-    let d = loc, (i, dec_ty, args, wb, typed_body) in
+    let d = loc, (hsd, i, dec_ty, args, wb, typed_body) in
     Ok (d :: with_block', env')
   | Some (_, t) ->
     make_err
@@ -632,15 +632,15 @@ let check_program ((n, imp, typs, defs) : Ast.program) : Typed_ast.program Base.
     List.filter_map
       (function
         | _, Ast.Dec _ -> None
-        | loc, Ast.Def (i, args, when_block, body, with_block) ->
-          Some (loc, (i, args, when_block, body, with_block)))
+        | loc, Ast.Def (hsd, i, args, when_block, body, with_block) ->
+          Some (loc, (hsd, i, args, when_block, body, with_block)))
       defs
   in
   let decs =
     List.filter_map
       (function
         | _, Ast.Def _ -> None
-        | _, Ast.Dec (i, dec) -> Some (i, dec))
+        | _, Ast.Dec (_, i, dec) -> Some (i, dec))
       defs
   in
   List.map (fun (_, t) -> check_type env t) decs
@@ -649,7 +649,7 @@ let check_program ((n, imp, typs, defs) : Ast.program) : Typed_ast.program Base.
   let mains =
     List.filter_map
       (function
-        | _, ("main", _, _, _, _) -> Some ()
+        | _, (_, "main", _, _, _, _) -> Some ()
         | _ -> None)
       defs'
   in

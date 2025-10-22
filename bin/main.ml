@@ -1,7 +1,7 @@
-open Language
-open Parser
-open Rename
-open Anf
+open! Language
+open! Parser
+open! Rename
+open! Anf
 
 let border () =
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
@@ -9,8 +9,8 @@ let border () =
 ;;
 
 let () =
-  let input = In_channel.(open_text "examples/operators.zap" |> input_all) in
-  (* let input = "a + b + c" in *)
+  let input = In_channel.(open_text "examples/multi.zap" |> input_all) in
+  (* let input = "" in *)
   (* print_endline input; *)
   let l = Lexer.of_string input in
   let res' = Parser.parse_program l in

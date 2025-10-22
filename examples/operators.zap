@@ -12,6 +12,20 @@ dec ( $ ) : ('a -> 'b) -> 'a -> 'b.
 def ( $ ) f v := f v;
 @rassoc 1 $
 
+def ifTest :=
+  if true
+  then 10
+  else 4
+;;
+
+def groupingTest :=
+  let number : int = {
+    let one := 1 in
+    let two := 2 in
+    one + two
+  } in number
+;;
+
 dec main : ().
 def main := 
   (pash & push & pop) 10 in

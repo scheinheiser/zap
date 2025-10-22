@@ -29,7 +29,7 @@ and term =
 type located_definition = Location.t * definition
 
 and definition =
-  func * Ast.located_ty * Ast.located_pattern list * typed_term option * typed_term list
+  bool * func * Ast.located_ty * Ast.located_pattern list * typed_term option * typed_term list
 
 type program =
   module_name
@@ -111,7 +111,7 @@ let pp_when_block out (when_block : typed_term option) =
     when_block
 ;;
 
-let pp_typed_definition out ((_, (f, ret, args, when_block, body)) : located_definition) =
+let pp_typed_definition out ((_, (_, f, ret, args, when_block, body)) : located_definition) =
   Format.fprintf
     out
     "(de@[<v>f %s (%a)@,(%a)@,%a@,%a@])"

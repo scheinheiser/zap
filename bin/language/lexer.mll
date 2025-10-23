@@ -66,6 +66,7 @@
     (":=", ASSIGNMENT);
     ("::", CONS);
     ("->", ARROW);
+    ("=>", F_ARROW);
     ("@", ATSIGN);
     ("~", TILDE);
     ("|", PIPE);

@@ -1,3 +1,4 @@
+% TODO: Change this to revolve around actual code, and work on syntax.
 @module TClass
 
 class Ord 'a : minimal (=) | (/=) =

@@ -25,7 +25,7 @@ type myRecord :=
   ; variantField ~ myVariant
   }
 
-dec filter : ('a -> bool) -> ['a] -> ['a].
+dec* filter : ('a -> bool) -> ['a] -> ['a].
 def* filter _ [] := [];
 def* filter p (x :: xs) :=
   if p x
@@ -34,14 +34,14 @@ def* filter p (x :: xs) :=
 ;;
 
 % pattern guards
-dec cfilter : ('a -> bool) -> ['a] -> ['a].
+dec* cfilter : ('a -> bool) -> ['a] -> ['a].
 def* cfilter _ [] := [];
 def* cfilter p (x :: xs) : when (p x) = x :: cfilter p xs;
 def* cfilter p (_ :: xs) := cfilter p xs
 ;;
 
 % block pattern guards
-dec clampNums : [int] -> [int].
+dec* clampNums : [int] -> [int].
 def* clampNums [] := [];
 def* clampNums (x :: xs) := x :: clampNums xs;
 def* clampNums (x :: xs)
@@ -51,7 +51,7 @@ def* clampNums (x :: xs)
 def* clampNums (_ :: xs) := clampNums xs
 ;;
 
-dec getLast : ['a] -> 'a.
+dec* getLast : ['a] -> 'a.
 def* getLast [] := fail "empty list";
 def* getLast [x] := x;
 def* getLast (_ :: xs) := getLast xs
@@ -62,16 +62,15 @@ dec map : ('a -> 'b) -> ['a] -> ['b].
 def map := go
   with
     % you can omit the dec for functions/variables in with-blocks
-    def go _ [] := [];
-    def go f (x :: xs) := f x :: go f xs
-    ;;
+    def* go _ [] := [];
+    def* go f (x :: xs) := f x :: go f xs;
 ;;
 
 % let-binding function
 dec lamTest : int -> bool.
 def lamTest num :=
   % you can have let-bindings act as functions through the use of lambdas
-  let test_lambda : int -> string = fun n -> show n in
+  let test_lambda : int -> string = fun n => show n in
   length (test_lambda num) > 10
 ;;
 
@@ -87,15 +86,12 @@ def sayHello name :=
 
 % partial application
 dec addOne : int -> int.
-def addOne := op+ 1
-;;
+def addOne := op+ 1;
 
 % atoms
 dec okOrNot : bool -> atom.
 def okOrNot true := @ok;
-def okOrNot false := @fail
-;;
+def okOrNot false := @fail;
 
 dec main : ().
-def main := print "hello world!"
-;;
+def main := print "hello world!";

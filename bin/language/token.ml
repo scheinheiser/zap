@@ -56,6 +56,7 @@ and token =
   | EQ
   | ASSIGNMENT
   | ARROW
+  | F_ARROW
   | ATSIGN
   | DOT
   | COMMA
@@ -130,6 +131,7 @@ let show (t : token) : string =
   | EQ -> "EQ"
   | ASSIGNMENT -> "ASSIGNMENT"
   | ARROW -> "ARROW"
+  | F_ARROW -> "F_ARROW"
   | ATSIGN -> "ATSIGN"
   | DOT -> "DOT"
   | COMMA -> "COMMA"

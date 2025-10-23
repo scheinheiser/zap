@@ -550,7 +550,7 @@ module Parser = struct
     | s, LAM ->
       Lexer.skip ~am:1 l;
       let args = parse_args l in
-      Lexer.consume l ARROW "Expected '->' after lambda arguments.";
+      Lexer.consume l F_ARROW "Expected '->' after lambda arguments.";
       let body = parse_term l om in
       Location.combine s (Lexer.current_pos l), Ast.TLam (args, body)
     | s, _ ->

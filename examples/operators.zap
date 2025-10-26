@@ -23,6 +23,7 @@ def ifTest :=
 
 dec myFunc : int.
 def myFunc :=
+  4 :: [] in
   let n : int = {
     let one := 1 in
     let two := 2 in

@@ -103,10 +103,11 @@ let rec pp_term out ((_, t) : located_term) =
       pp_typed_term
       body
 
-and pp_typed_term out ((ty, term) : typed_term) = 
+and pp_typed_term out ((ty, term) : typed_term) =
   match term with
   | _, TLam _ -> Format.fprintf out "(%a %a)" Ast.pp_ty ty pp_term term
   | _ -> Format.fprintf out "%a" pp_term term
+;;
 
 let pp_when_block out (when_block : typed_term option) =
   Format.fprintf

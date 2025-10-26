@@ -8,11 +8,31 @@ end = struct
   module VM = Map.Make (String)
 
   (* any binder above this value is user defined *)
-  let user_bind = 1
-  let builtins = [ "print", 0; "::", 1 ]
+  let user_bind = 17
+  let builtins = [ 
+      "print", 0
+      ; "+", 1
+      ; "+.", 2
+      ; "-", 3
+      ; "-.", 4
+      ; "*", 5
+      ; "*.", 6
+      ; "/", 7
+      ; "/.", 8
+      ; "<", 9
+      ; ">", 10
+      ; "<=", 11
+      ; ">=", 12
+      ; "=", 13
+      ; "/=", 14
+      ; "&&", 15
+      ; "||", 16
+      ; "::", 17
+    ]
+  ;;
 
   let fresh_binder =
-    let i = ref 1 in
+    let i = ref 17 in
     fun () ->
       incr i;
       !i

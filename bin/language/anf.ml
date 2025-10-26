@@ -54,6 +54,7 @@ module ANF = struct
     | If _ -> "if statement"
     | Join _ -> "join"
     | Jump _ -> "jump"
+  ;;
 
   let rec pp_t out (t : t) =
     match t with
@@ -223,10 +224,10 @@ module ANF = struct
            , Some n
            , f (Ident n)
            , If (cond, of_typed_term t go, Some (of_typed_term f' go)) ))
-    | TGrouping ts -> 
+    | TGrouping ts ->
       let i = fresh_temp () in
       let* ts' = of_term_list ts in
-      let ((_, ty), _) = List.rev ts |> List.hd in
+      let (_, ty), _ = List.rev ts |> List.hd in
       Let (i, ty, ts', f (Ident i))
     | _ -> failwith "todo"
 
@@ -238,13 +239,13 @@ module ANF = struct
         let h = of_typed_term h f in
         Format.fprintf Format.std_formatter "current t: %a@." pp_t h;
         (match h with
-          | Bop (i, l, op, r, _) -> Bop (i, l, op, r, go t)
-          | Ap (i, b, l, r, _) -> Ap (i, b, l, r, go t)
-          | Let (i, t', v, _) -> Let (i, t', v, go t)
-          | Join (i, n, _, v) -> Join (i, n, go t, v)
-          | t ->
-            raise
-              (Error.InternalError
+         | Bop (i, l, op, r, _) -> Bop (i, l, op, r, go t)
+         | Ap (i, b, l, r, _) -> Ap (i, b, l, r, go t)
+         | Let (i, t', v, _) -> Let (i, t', v, go t)
+         | Join (i, n, _, v) -> Join (i, n, go t, v)
+         | t ->
+           raise
+             (Error.InternalError
                 (Printf.sprintf "Internal Error - unexpected term: %s" (show_t t))))
     in
     go ts

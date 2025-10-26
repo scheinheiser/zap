@@ -41,10 +41,14 @@ and const =
   | Ident of ident
 
 type binop =
-  | IAdd | FAdd
-  | IMul | FMul
-  | ISub | FSub
-  | IDiv | FDiv
+  | IAdd
+  | FAdd
+  | IMul
+  | FMul
+  | ISub
+  | FSub
+  | IDiv
+  | FDiv
   | Less
   | Greater
   | LessE
@@ -192,10 +196,14 @@ let pp_const out ((_, c) : located_const) =
 let pp_binop out (b : binop) =
   let op =
     match b with
-    | IAdd -> "+" | FAdd -> "+."
-    | IMul -> "*" | FMul -> "*."
-    | ISub -> "-" | FSub -> "-."
-    | IDiv -> "/" | FDiv -> "/."
+    | IAdd -> "+"
+    | FAdd -> "+."
+    | IMul -> "*"
+    | FMul -> "*."
+    | ISub -> "-"
+    | FSub -> "-."
+    | IDiv -> "/"
+    | FDiv -> "/."
     | Less -> "<"
     | Greater -> ">"
     | LessE -> "<="

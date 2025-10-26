@@ -12,7 +12,6 @@ type operator_map = (int * assoc) OM.t
 
 let fresh_om () : operator_map = OM.empty
 
-
 module Lexer : sig
   type t
 
@@ -206,8 +205,8 @@ module Parser = struct
     | NE | EQ -> 2
     | AND | OR -> 3
     | LT | GT | LTE | GTE -> 4
-    | PLUS | MINUS -> 5
-    | MUL | DIV -> 6
+    | PLUS | MINUS | FPLUS | FMINUS -> 5
+    | MUL | DIV | FMUL | FDIV -> 6
     | CONS -> 7
     | OP op ->
       (match OM.find_opt op om with
@@ -298,7 +297,7 @@ module Parser = struct
       parse_arrow l (Location.combine s (Lexer.current_pos l), Ast.List left)
     | s, IDENT i ->
       Lexer.skip l ~am:1;
-      parse_arrow l (Location.combine s (Lexer.current_pos l), Ast.Constructor (i, left))
+      parse_arrow l (Location.combine s (Lexer.current_pos l), Ast.Ctor (i, left))
     | _ -> left
   ;;
 
@@ -380,10 +379,14 @@ module Parser = struct
     =
     let expr =
       match op with
-      | PLUS -> Ast.Bop (left, Ast.Add, parse_expr l lbp om)
-      | MINUS -> Ast.Bop (left, Ast.Sub, parse_expr l lbp om)
-      | MUL -> Ast.Bop (left, Ast.Mul, parse_expr l lbp om)
-      | DIV -> Ast.Bop (left, Ast.Div, parse_expr l lbp om)
+      | PLUS -> Ast.Bop (left, Ast.IAdd, parse_expr l lbp om)
+      | FPLUS -> Ast.Bop (left, Ast.FAdd, parse_expr l lbp om)
+      | MINUS -> Ast.Bop (left, Ast.ISub, parse_expr l lbp om)
+      | FMINUS -> Ast.Bop (left, Ast.FSub, parse_expr l lbp om)
+      | MUL -> Ast.Bop (left, Ast.IMul, parse_expr l lbp om)
+      | FMUL -> Ast.Bop (left, Ast.FMul, parse_expr l lbp om)
+      | DIV -> Ast.Bop (left, Ast.IDiv, parse_expr l lbp om)
+      | FDIV -> Ast.Bop (left, Ast.FDiv, parse_expr l lbp om)
       | CONS -> Ast.Bop (left, Ast.Cons, parse_expr l (lbp - 1) om)
       | NE -> Ast.Bop (left, Ast.NotEq, parse_expr l lbp om)
       | EQ -> Ast.Bop (left, Ast.Equal, parse_expr l lbp om)
@@ -550,7 +553,7 @@ module Parser = struct
     | s, LAM ->
       Lexer.skip ~am:1 l;
       let args = parse_args l in
-      Lexer.consume l F_ARROW "Expected '->' after lambda arguments.";
+      Lexer.consume l F_ARROW "Expected '=>' after lambda arguments.";
       let body = parse_term l om in
       Location.combine s (Lexer.current_pos l), Ast.TLam (args, body)
     | s, _ ->
@@ -574,7 +577,9 @@ module Parser = struct
     (* checking if it's a def*, multi-def style function or just an ordinary function *)
     let hsd =
       match Lexer.current l with
-      | _, MUL -> Lexer.skip ~am:1 l; true
+      | _, MUL ->
+        Lexer.skip ~am:1 l;
+        true
       | _ -> false
     in
     let n = parse_definition_ident l in
@@ -628,10 +633,12 @@ module Parser = struct
 
   and parse_dec (l : Lexer.t) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEC "Expected 'dec' keyword." in
-    (* checking if it's a def*, multi-def style function or just an ordinary function *)
+    (* checking if it's a dec*, multi-def style function or just an ordinary function *)
     let hsd =
       match Lexer.current l with
-      | _, MUL -> Lexer.skip ~am:1 l; true
+      | _, MUL ->
+        Lexer.skip ~am:1 l;
+        true
       | _ -> false
     in
     let n = parse_definition_ident l in
@@ -649,9 +656,7 @@ module Parser = struct
           l
           (function
             | OP o -> Some o
-            | t ->
-              Printf.printf "not op: %s\n" (Token.show t);
-              None)
+            | _ -> None)
           "Expected operator after '(' in definition."
       in
       Lexer.consume l RPAREN "Expected ')' after operator identifier.";

@@ -23,7 +23,7 @@ type located_ty = Location.t * ty
 and ty =
   | Arrow of located_ty * located_ty
   | List of located_ty
-  | Constructor of tname * located_ty
+  | Ctor of tname * located_ty
   | Tuple of located_ty list
   | Prim of prim
   | Udt of tname (* user defined type *)
@@ -41,10 +41,10 @@ and const =
   | Ident of ident
 
 type binop =
-  | Add
-  | Mul
-  | Sub
-  | Div
+  | IAdd | FAdd
+  | IMul | FMul
+  | ISub | FSub
+  | IDiv | FDiv
   | Less
   | Greater
   | LessE
@@ -137,7 +137,7 @@ let show_prim = function
 let rec show_ty = function
   | Arrow ((_, l), (_, r)) -> Printf.sprintf "%s -> %s" (show_ty l) (show_ty r)
   | List (_, t) -> Printf.sprintf "[%s]" (show_ty t)
-  | Constructor (c, (_, t)) -> Printf.sprintf "%s %s" c (show_ty t)
+  | Ctor (c, (_, t)) -> Printf.sprintf "%s %s" c (show_ty t)
   | Tuple ts ->
     let ts' = List.map (fun (_, t) -> show_ty t) ts in
     "(" ^ String.concat ", " ts' ^ ")"
@@ -166,7 +166,7 @@ let rec pp_ty out ((_, ty) : located_ty) =
   match ty with
   | Arrow (l, r) -> Format.fprintf out "(@[<hov>->@ %a@ %a@])" pp_ty l pp_ty r
   | List t -> Format.fprintf out "[%a]" pp_ty t
-  | Constructor (c, t) -> Format.fprintf out "(@[<hov>%s@ %a@])" c pp_ty t
+  | Ctor (c, t) -> Format.fprintf out "(@[<hov>%s@ %a@])" c pp_ty t
   | Tuple ts ->
     Format.fprintf
       out
@@ -180,7 +180,7 @@ let rec pp_ty out ((_, ty) : located_ty) =
 let pp_const out ((_, c) : located_const) =
   match c with
   | Int i -> Format.fprintf out "%d" i
-  | Float f -> Format.fprintf out "%.5f" f
+  | Float f -> Format.fprintf out "%.3f" f
   | String s -> Format.fprintf out "\"%s\"" s
   | Char c' -> Format.fprintf out "'%c'" c'
   | Bool b -> Format.fprintf out "%b" b
@@ -192,10 +192,10 @@ let pp_const out ((_, c) : located_const) =
 let pp_binop out (b : binop) =
   let op =
     match b with
-    | Add -> "+"
-    | Mul -> "*"
-    | Sub -> "-"
-    | Div -> "/"
+    | IAdd -> "+" | FAdd -> "+."
+    | IMul -> "*" | FMul -> "*."
+    | ISub -> "-" | FSub -> "-."
+    | IDiv -> "/" | FDiv -> "/."
     | Less -> "<"
     | Greater -> ">"
     | LessE -> "<="

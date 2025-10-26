@@ -38,10 +38,10 @@ and token =
   | LTE
   | GTE
   | NE
-  | PLUS
-  | MINUS
-  | DIV
-  | MUL
+  | PLUS | FPLUS
+  | MINUS | FMINUS
+  | DIV | FDIV
+  | MUL | FMUL
   | CONS
   | PIPE
   | LBRACE
@@ -113,10 +113,10 @@ let show (t : token) : string =
   | LTE -> "LTE"
   | GTE -> "GTE"
   | NE -> "NE"
-  | PLUS -> "PLUS"
-  | MINUS -> "MINUS"
-  | DIV -> "DIV"
-  | MUL -> "MUL"
+  | PLUS -> "PLUS" | FPLUS -> "FPLUS"
+  | MINUS -> "MINUS" | FMINUS -> "FMINUS"
+  | DIV -> "DIV" | FDIV -> "FDIV"
+  | MUL -> "MUL" | FMUL -> "FMUL"
   | CONS -> "CONS"
   | PIPE -> "PIPE"
   | LBRACE -> "LBRACE"

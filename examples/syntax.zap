@@ -1,3 +1,4 @@
+% TODO: update this to reflect changes in the syntax
 % this is a comment.
 
 %{

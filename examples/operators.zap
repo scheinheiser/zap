@@ -23,14 +23,11 @@ def ifTest :=
 
 dec myFunc : int.
 def myFunc :=
-  {
-    if true
-    then print "hi"
-    else print "sup" in
+  let n : int = {
     let one := 1 in
     let two := 2 in
     one + two
-  }
+  } in n
 ;;
 
 dec main : ().

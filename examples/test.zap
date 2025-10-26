@@ -38,6 +38,7 @@ def shadowWarn :=
   k
 ;;
 
+dec failingUnification : int -> int.
 def failingUnification n :=
   n + 1 in
   n + 2 in

@@ -18,8 +18,7 @@ let () =
   Ast.pp_program Format.std_formatter res;
   border ();
   match Typecheck.check_program res with
-  | Ok p -> 
-    ANF.of_typed_program p |> fun p ->
-    ANF.pp_program Format.std_formatter p
+  | Ok p -> (*ANF.of_typed_program p |> fun p -> ANF.pp_program Format.std_formatter p*)
+    Typed_ast.pp_typed_program Format.std_formatter p
   | Error e -> print_endline (Base.Error.to_string_hum e)
 ;;

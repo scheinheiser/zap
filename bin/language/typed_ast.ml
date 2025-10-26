@@ -29,7 +29,12 @@ and term =
 type located_definition = Location.t * definition
 
 and definition =
-  bool * func * Ast.located_ty * Ast.located_pattern list * typed_term option * typed_term list
+  bool
+  * func
+  * Ast.located_ty
+  * Ast.located_pattern list
+  * typed_term option
+  * typed_term list
 
 type program =
   module_name
@@ -98,7 +103,10 @@ let rec pp_term out ((_, t) : located_term) =
       pp_typed_term
       body
 
-and pp_typed_term out ((_, term) : typed_term) = Format.fprintf out "%a" pp_term term
+and pp_typed_term out ((ty, term) : typed_term) = 
+  match term with
+  | _, TLam _ -> Format.fprintf out "(%a %a)" Ast.pp_ty ty pp_term term
+  | _ -> Format.fprintf out "%a" pp_term term
 
 let pp_when_block out (when_block : typed_term option) =
   Format.fprintf
@@ -111,7 +119,10 @@ let pp_when_block out (when_block : typed_term option) =
     when_block
 ;;
 
-let pp_typed_definition out ((_, (_, f, ret, args, when_block, body)) : located_definition) =
+let pp_typed_definition
+      out
+      ((_, (_, f, ret, args, when_block, body)) : located_definition)
+  =
   Format.fprintf
     out
     "(de@[<v>f %s (%a)@,(%a)@,%a@,%a@])"

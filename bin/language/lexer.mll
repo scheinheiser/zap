@@ -52,9 +52,13 @@
 
   let builtin_symbol = [
     ("+", PLUS);
+    ("+.", FPLUS);
     ("-", MINUS);
+    ("-", FMINUS);
     ("*", MUL);
+    ("*.", FMUL);
     ("/", DIV);
+    ("/.", FDIV);
     ("&&", AND);
     ("||", OR);
     ("=", EQ);

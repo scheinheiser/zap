@@ -119,12 +119,12 @@ end = struct
       let i' = fresh_alpha i in
       if VM.exists (fun i'' _ -> i'' = i) env
       then Error.report_warning (Some loc, Printf.sprintf "Identifier '%s' is shadowed." i);
-      let expr', env' = rename_term env expr in
-      let env'' = VM.add i (i', false) env' in
-      (loc, TLet (i', t, expr')), env''
+      let expr', _ = rename_term env expr in
+      let env = VM.add i (i', false) env in
+      (loc, TLet (i', t, expr')), env
     | TGrouping g ->
-      let g', env' = rename_list ~f:rename_term env g in
-      (loc, TGrouping g'), env'
+      let g', _ = rename_list ~f:rename_term env g in
+      (loc, TGrouping g'), env
     | TIf (e, t, f) ->
       let e', env' = rename_expr env e in
       let t', env'' = rename_term env' t in
@@ -138,11 +138,13 @@ end = struct
       (loc, TIf (e', t', f')), env'''
     | TLam (ps, t) ->
       let ps', env' = rename_list ~f:rename_pattern env ps in
-      let t', env'' = rename_term env' t in
-      (loc, TLam (ps', t')), env''
+      let t', _ = rename_term env' t in
+      (loc, TLam (ps', t')), env
   ;;
 
-  let rec rename_definition (env : (string * bool) VM.t) ((loc, d) : Ast.located_definition)
+  let rec rename_definition
+            (env : (string * bool) VM.t)
+            ((loc, d) : Ast.located_definition)
     : Ast.located_definition * (string * bool) VM.t
     =
     let open Ast in

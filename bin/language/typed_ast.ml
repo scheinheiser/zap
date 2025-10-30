@@ -15,16 +15,10 @@ and expr =
   | ETup of typed_expr list
   | Bop of typed_expr * Ast.binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
-
-type typed_term = Ast.located_ty * located_term
-and located_term = Location.t * term
-
-and term =
-  | TExpr of typed_expr
-  | TLet of ident * typed_term
-  | TGrouping of typed_term list
-  | TIf of typed_expr * typed_term * typed_term option
-  | TLam of Ast.located_pattern list * typed_term
+  | Let of Ast.located_pattern * typed_expr * typed_expr
+  | Grouping of typed_expr
+  | If of typed_expr * typed_expr * typed_expr option
+  | Lam of Ast.located_pattern list * typed_expr
 
 type located_definition = Location.t * definition
 
@@ -33,8 +27,8 @@ and definition =
   * func
   * Ast.located_ty
   * Ast.located_pattern list
-  * typed_term option
-  * typed_term list
+  * typed_expr option
+  * typed_expr
 
 type program =
   module_name
@@ -69,54 +63,44 @@ let rec pp_expr out ((_, e) : located_expr) =
       l
       pp_typed_expr
       r
-
-and pp_typed_expr out ((t, expr) : typed_expr) =
-  Format.fprintf out "(%a %a)" Ast.pp_ty t pp_expr expr
-;;
-
-let rec pp_term out ((_, t) : located_term) =
-  match t with
-  | TExpr e -> pp_typed_expr out e
-  | TLet (i, v) -> Format.fprintf out "(@[<hov>%s@ %a@])" i pp_typed_term v
-  | TGrouping body ->
+  | Let (p, v, n) -> Format.fprintf out "@[(@[<hov>%a@ %a@])@,%a@]" Ast.pp_pattern p pp_typed_expr v pp_typed_expr n
+  | Grouping body ->
     Format.fprintf
       out
       "(@[<v>%a@])"
-      Format.(pp_print_list ~pp_sep:pp_print_cut pp_typed_term)
+      pp_typed_expr
       body
-  | TIf (cond, tbranch, fbranch) ->
+  | If (cond, tbranch, fbranch) ->
     Format.fprintf
       out
       "(if@[<v> %a@,%a@,%a@])"
       pp_typed_expr
       cond
-      pp_typed_term
+      pp_typed_expr
       tbranch
-      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_typed_term)
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_typed_expr)
       fbranch
-  | TLam (args, body) ->
+  | Lam (args, body) ->
     Format.fprintf
       out
       "(la@[<v>m (%a)@,%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_pattern)
       args
-      pp_typed_term
+      pp_typed_expr
       body
 
-and pp_typed_term out ((ty, term) : typed_term) =
-  match term with
-  | _, TLam _ -> Format.fprintf out "(%a %a)" Ast.pp_ty ty pp_term term
-  | _ -> Format.fprintf out "%a" pp_term term
+and pp_typed_expr out ((t, expr) : typed_expr) =
+  Format.fprintf out "(%a %a)" Ast.pp_ty t pp_expr expr
 ;;
 
-let pp_when_block out (when_block : typed_term option) =
+let pp_when_block out (when_block : typed_expr option) =
   Format.fprintf
     out
     "%a"
     Format.(
       pp_print_option
         ~none:(fun out () -> fprintf out "()")
-        (fun out block -> fprintf out "(when @[<hov>%a@])" pp_typed_term block))
+        (fun out block -> fprintf out "(when @[<hov>%a@])" pp_typed_expr block))
     when_block
 ;;
 
@@ -134,7 +118,7 @@ let pp_typed_definition
     args
     pp_when_block
     when_block
-    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_typed_term)
+    pp_typed_expr
     body
 ;;
 

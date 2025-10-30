@@ -150,7 +150,7 @@ let show (t : token) : string =
 
 let is_op (t : token) : bool =
   match t with
-  | OP _ | PLUS | MINUS | DIV | MUL | AND | OR | LT | GT | LTE | GTE | CONS | NE | EQ ->
+  | OP _ | PLUS | FPLUS | MINUS | FMINUS | DIV | FDIV | MUL | FMUL | AND | OR | LT | GT | LTE | GTE | CONS | NE | EQ ->
     true
   | _ -> false
 ;;

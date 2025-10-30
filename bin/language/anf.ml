@@ -25,7 +25,6 @@ module ANF = struct
     | If of value * t * t option
     | Join of ident * ident option * t * t
     | Jump of ident * value option
-    | Stmt of t * t
 
   type definition = ident * Ast.ty * t option * t
   type program = module_name * Ast.ty_decl list * definition list
@@ -44,7 +43,6 @@ module ANF = struct
   ;;
 
   let show_t = function
-    | Stmt _ -> "statement"
     | Return _ -> "return"
     | Const _ -> "const"
     | Tuple _ -> "tuple"
@@ -60,7 +58,6 @@ module ANF = struct
     match t with
     | Return v -> Format.fprintf out "return %a" pp_value v
     | Const c -> pp_value out c
-    | Stmt (l, r) -> Format.fprintf out "%a %a" pp_t l pp_t r
     | Tuple ts ->
       Format.fprintf
         out
@@ -188,7 +185,7 @@ module ANF = struct
     | EList l | ETup l ->
       (* tuples are treated as lists (for now) *)
       let accumulate e ctx values = of_typed_expr e (fun v -> ctx (v :: values)) in
-      let base values =
+      let base values: t =
         let i = fresh_temp () in
         let e =
           let rec go last_name = function
@@ -202,53 +199,28 @@ module ANF = struct
         Let (i, ty, Ident "Nil", e)
       in
       (List.fold_right accumulate l base) []
-  ;;
-
-  let rec of_typed_term (((_, ty), (_, t)) : Typed_ast.typed_term) (f : value -> t) : t =
-    let open Typed_ast in
-    let ( let* ) = ( @@ ) in
-    match t with
-    | TExpr e -> of_typed_expr e f
-    | TLet (i, t) ->
-      let* t = of_typed_term t in
-      Let (i, ty, t, f (Ident i))
-    | TIf (cond, t, f') ->
-      let* cond = of_typed_expr cond in
-      let i, n = fresh_temp (), fresh_temp () in
-      let go value = Jump (i, Some value) in
-      (match f' with
-       | None -> Join (i, Some n, f (Ident n), If (cond, of_typed_term t go, None))
-       | Some f' ->
-         Join
-           ( i
-           , Some n
-           , f (Ident n)
-           , If (cond, of_typed_term t go, Some (of_typed_term f' go)) ))
-    | TGrouping ts ->
-      let i = fresh_temp () in
-      let* ts' = of_term_list ts in
-      let (_, ty), _ = List.rev ts |> List.hd in
-      Let (i, ty, ts', f (Ident i))
+    (* | Let (i, t, n) -> *)
+    (*   let* t = of_typed_term t in *)
+    (*   let* n = of_typed_term n in *)
+    (*   Let (i, ty, t, n) *)
+    (* | If (cond, t, f') -> *)
+    (*   let* cond = of_typed_expr cond in *)
+    (*   let i, n = fresh_temp (), fresh_temp () in *)
+    (*   let go value = Jump (i, Some value) in *)
+    (*   (match f' with *)
+    (*    | None -> Join (i, Some n, f (Ident n), If (cond, of_typed_term t go, None)) *)
+    (*    | Some f' -> *)
+    (*      Join *)
+    (*        ( i *)
+    (*        , Some n *)
+    (*        , f (Ident n) *)
+    (*        , If (cond, of_typed_term t go, Some (of_typed_term f' go)) )) *)
+    (* | Grouping ts -> *)
+    (*   let i = fresh_temp () in *)
+    (*   let* ts' = of_term_list ts in *)
+    (*   let (_, ty), _ = List.rev ts |> List.hd in *)
+    (*   Let (i, ty, ts', f (Ident i)) *)
     | _ -> failwith "todo"
-
-  and of_term_list (ts : Typed_ast.typed_term list) (f : value -> t) : t =
-    let rec go = function
-      | [] -> raise (Error.InternalError "Internal Error - empty term list.")
-      | [ h ] -> of_typed_term h f
-      | h :: t ->
-        let h = of_typed_term h f in
-        Format.fprintf Format.std_formatter "current t: %a@." pp_t h;
-        (match h with
-         | Bop (i, l, op, r, _) -> Bop (i, l, op, r, go t)
-         | Ap (i, b, l, r, _) -> Ap (i, b, l, r, go t)
-         | Let (i, t', v, _) -> Let (i, t', v, go t)
-         | Join (i, n, _, v) -> Join (i, n, go t, v)
-         | t ->
-           raise
-             (Error.InternalError
-                (Printf.sprintf "Internal Error - unexpected term: %s" (show_t t))))
-    in
-    go ts
   ;;
 
   let rec of_typed_program ((mod_name, _, decls, defs) : Typed_ast.program) : program =
@@ -260,8 +232,8 @@ module ANF = struct
         ((_, (_, i, (_, ty), _, when_block, body)) : Typed_ast.located_definition)
     : definition
     =
-    let when_block = Base.Option.map when_block ~f:(Fun.flip of_typed_term mk_ret) in
-    let body = of_term_list body mk_ret in
+    let when_block = Base.Option.map when_block ~f:(Fun.flip of_typed_expr mk_ret) in
+    let body = of_typed_expr body mk_ret in
     i, ty, when_block, body
   ;;
 end

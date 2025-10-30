@@ -1,8 +1,9 @@
-open Util
+open! Util
 
 module Alpha : sig
   val user_bind : int
   val find_ident : Ast.located_expr -> string
+  val fresh_alpha : string -> string
   val rename_program : Ast.program -> Ast.program
 end = struct
   module VM = Map.Make (String)
@@ -32,7 +33,7 @@ end = struct
   ;;
 
   let fresh_binder =
-    let i = ref 17 in
+    let i = ref user_bind in
     fun () ->
       incr i;
       !i
@@ -48,10 +49,10 @@ end = struct
   let fresh_env () = VM.empty
 
   let rename_list
-        ~(f : (string * bool) VM.t -> 'a -> 'a * (string * bool) VM.t)
-        (env : (string * bool) VM.t)
+        ~(f : 'b VM.t -> 'a -> 'a * ('b VM.t))
+        (env : 'b VM.t)
         (l : 'a list)
-    : 'a list * (string * bool) VM.t
+    : 'a list * 'b VM.t
     =
     let rec go acc e = function
       | [] -> List.rev acc, e
@@ -125,41 +126,47 @@ end = struct
       (match Base.List.Assoc.find builtins ~equal:Base.String.( = ) i with
        | Some b -> (loc, Ap (b, l', r')), env'
        | None -> (loc, Ap (fresh_binder (), l', r')), env'')
-  ;;
-
-  let rec rename_term (env : (string * bool) VM.t) ((loc, term) : Ast.located_term)
-    : Ast.located_term * (string * bool) VM.t
-    =
-    let open Ast in
-    match term with
-    | TExpr e ->
+    | Let (p, t, expr, n) ->
+      let rec collect_idents acc = function
+        | _, PConst (_, Ident i) -> i :: acc
+        | _, PCons (l, r) -> collect_idents acc l |> Fun.flip collect_idents r
+        | _, PList ps | _, PTup ps ->
+          let rec go a = function
+            | [] -> a
+            | h :: t ->
+              let a' = collect_idents a h in
+              go a' t
+          in acc @ go [] ps
+        | _ -> acc
+      in
+      (*TODO: shadow warning? *)
+      let p, env = rename_pattern env p in
+      let expr, _ = rename_expr env expr in
+      let env = 
+        let idents = collect_idents [] p |> List.map (fun i -> let i' = fresh_alpha i in (i, (i', false))) in
+        let env = VM.to_list env in
+        idents @ env |> VM.of_list
+      in
+      let n, env = rename_expr env n in
+      (loc, Let (p, t, expr, n)), env
+    | Grouping g ->
+      let g, _ = rename_expr env g in
+      (loc, Grouping g), env
+    | If (e, t, f) ->
       let e, env = rename_expr env e in
-      (loc, TExpr e), env
-    | TLet (i, t, expr) ->
-      let i' = fresh_alpha i in
-      if VM.exists (fun i'' _ -> i'' = i) env
-      then Error.report_warning (Some loc, Printf.sprintf "Identifier '%s' is shadowed." i);
-      let expr', _ = rename_term env expr in
-      let env = VM.add i (i', false) env in
-      (loc, TLet (i', t, expr')), env
-    | TGrouping g ->
-      let g', _ = rename_list ~f:rename_term env g in
-      (loc, TGrouping g'), env
-    | TIf (e, t, f) ->
-      let e', env' = rename_expr env e in
-      let t', env'' = rename_term env' t in
-      let f', env''' =
+      let t, env = rename_expr env t in
+      let f, env =
         match f with
         | Some f' ->
-          let t, e' = rename_term env'' f' in
-          Some t, e'
-        | None -> None, env''
+          let t, e = rename_expr env f' in
+          Some t, e
+        | None -> None, env
       in
-      (loc, TIf (e', t', f')), env'''
-    | TLam (ps, t) ->
-      let ps', env' = rename_list ~f:rename_pattern env ps in
-      let t', _ = rename_term env' t in
-      (loc, TLam (ps', t')), env
+      (loc, If (e, t, f)), env
+    | Lam (ps, t) ->
+      let ps, env = rename_list ~f:rename_pattern env ps in
+      let t, _ = rename_expr env t in
+      (loc, Lam (ps, t)), env
   ;;
 
   let rec rename_definition
@@ -170,7 +177,7 @@ end = struct
     let open Ast in
     match d with
     | Dec (hsd, i, sig') ->
-      let i', env' =
+      let i, env =
         if i = "main"
         then i, env
         else (
@@ -178,9 +185,9 @@ end = struct
           let env' = VM.add i (i', hsd) env in
           i', env')
       in
-      (loc, Dec (hsd, i', sig')), env'
+      (loc, Dec (hsd, i, sig')), env
     | Def (hsd, i, args, when_block, body, with_block) ->
-      let i', env =
+      let i, env =
         if i = "main"
         then i, env
         else (
@@ -192,25 +199,21 @@ end = struct
             let env' = VM.add i (i', hsd) env in
             i', env')
       in
-      let args', env = rename_list ~f:rename_pattern env args in
+      let args, env = rename_list ~f:rename_pattern env args in
       (match when_block with
        | Some wb ->
-         let t, e' = rename_term env wb in
-         Some t, e'
+         let t, e = rename_expr env wb in
+         Some t, e
        | None -> None, env)
-      |> fun (when_block', env) ->
-      (match with_block with
-       | Some wb ->
-         let ds, e' = rename_list ~f:rename_definition env wb in
-         Some ds, e'
-       | None -> None, env)
-      |> fun (with_block', env) ->
-      let body', env = rename_list ~f:rename_term env body in
-      (loc, Def (hsd, i', args', when_block', body', with_block')), env
+      |> fun (when_block, env) ->
+      rename_list ~f:rename_definition env with_block
+      |> fun (with_block, env) ->
+      let body, env = rename_expr env body in
+      (loc, Def (hsd, i, args, when_block, body, with_block)), env
   ;;
 
   let rename_program ((prog_name, imps, tys, defs) : Ast.program) : Ast.program =
-    let defs' = fst @@ rename_list ~f:rename_definition (fresh_env ()) defs in
-    prog_name, imps, tys, defs'
+    let defs = rename_list ~f:rename_definition (fresh_env ()) defs |> fst in
+    prog_name, imps, tys, defs
   ;;
 end

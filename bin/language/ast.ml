@@ -1,5 +1,5 @@
-open Util
 (* made with occasional referencing of https://github.com/camllight/camllight/blob/master/sources/src/compiler/syntax.ml *)
+open Util
 
 (* Type definitions *)
 type ident = string
@@ -41,14 +41,10 @@ and const =
   | Ident of ident
 
 type binop =
-  | IAdd
-  | FAdd
-  | IMul
-  | FMul
-  | ISub
-  | FSub
-  | IDiv
-  | FDiv
+  | IAdd | FAdd
+  | IMul | FMul
+  | ISub | FSub
+  | IDiv | FDiv
   | Less
   | Greater
   | LessE
@@ -59,6 +55,16 @@ type binop =
   | Or
   | Cons
   | User_op of ident
+[@@ocamlformat "disable"]
+
+type located_pattern = Location.t * pattern
+
+and pattern =
+  | PWild (* _ *)
+  | PConst of located_const
+  | PCons of located_pattern * located_pattern
+  | PList of located_pattern list
+  | PTup of located_pattern list
 
 type located_expr = Location.t * expr
 
@@ -69,24 +75,10 @@ and expr =
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
   | ETup of located_expr list
-
-type located_pattern = Location.t * pattern
-
-and pattern =
-  | PConst of located_const
-  | PWild (* wildcard, '_' *)
-  | PCons of located_pattern * located_pattern
-  | PList of located_pattern list
-  | PTup of located_pattern list
-
-type located_term = Location.t * term
-
-and term =
-  | TExpr of located_expr
-  | TLet of ident * located_ty option * located_term
-  | TGrouping of located_term list
-  | TIf of located_expr * located_term * located_term option
-  | TLam of located_pattern list * located_term
+  | Let of located_pattern * located_ty option * located_expr * located_expr (* let p1 .. pn : <optional_ty> = e1 in e2 *)
+  | Grouping of located_expr
+  | If of located_expr * located_expr * located_expr option
+  | Lam of located_pattern list * located_expr
 
 type import_cond =
   | CWith of ident list
@@ -111,9 +103,9 @@ and definition =
       bool
       * func
       * located_pattern list
-      * located_term option
-      * located_term list
-      * with_block option
+      * located_expr option
+      * located_expr
+      * with_block
 (* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = located_definition list
@@ -218,26 +210,6 @@ let pp_binop out (b : binop) =
   Format.fprintf out "%s" op
 ;;
 
-let rec pp_expr out ((_, e) : located_expr) =
-  match e with
-  | Const c -> pp_const out c
-  | ETup t ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
-      t
-  | EList l ->
-    Format.fprintf
-      out
-      "[@[<hov>%a@]]"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
-      l
-  | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
-  | Bop (l, op, r) ->
-    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
-;;
-
 let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
@@ -257,41 +229,56 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
 ;;
 
-let rec pp_term out ((_, t) : located_term) =
-  match t with
-  | TExpr e -> pp_expr out e
-  | TLet (i, ty, v) ->
+let rec pp_expr out ((_, e) : located_expr) =
+  match e with
+  | Const c -> pp_const out c
+  | ETup t ->
     Format.fprintf
       out
-      "(@[<hov>%s@ %a@ %a@])"
-      i
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
+      t
+  | EList l ->
+    Format.fprintf
+      out
+      "[@[<hov>%a@]]"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
+      l
+  | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
+  | Bop (l, op, r) ->
+    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
+  | Let (p, ty, v, n) ->
+    Format.fprintf
+      out
+      "@[<v>(@[<hov>%a@ %a@ %a@])@,%a@]"
+      pp_pattern p
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_ty)
       ty
-      pp_term
+      pp_expr
       v
-  | TGrouping body ->
+      pp_expr n
+  | Grouping body ->
     Format.fprintf
       out
       "(@[<v>%a@])"
-      Format.(pp_print_list ~pp_sep:pp_print_cut pp_term)
-      body
-  | TIf (cond, tbranch, fbranch) ->
+      pp_expr body
+  | If (cond, tbranch, fbranch) ->
     Format.fprintf
       out
       "(if @[<v>%a@,%a@,%a@])"
       pp_expr
       cond
-      pp_term
+      pp_expr
       tbranch
-      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_term)
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
       fbranch
-  | TLam (args, body) ->
+  | Lam (args, body) ->
     Format.fprintf
       out
       "(lam @[<v>(%a) %a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern)
       args
-      pp_term
+      pp_expr
       body
 ;;
 
@@ -355,14 +342,14 @@ let pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   | _ -> Format.fprintf out "(ty@[<v>pe %s@,%a@])" i pp_tdecl_type t
 ;;
 
-let pp_when_block out (when_block : located_term option) =
+let pp_when_block out (when_block : located_expr option) =
   Format.fprintf
     out
     "%a"
     Format.(
       pp_print_option
         ~none:(fun out () -> fprintf out "()")
-        (fun out block -> fprintf out "(when @[<hov>%a@])" pp_term block))
+        (fun out block -> fprintf out "(when @[<hov>%a@])" pp_expr block))
     when_block
 ;;
 
@@ -378,20 +365,20 @@ let rec pp_definition out ((_, def) : located_definition) =
       args
       pp_when_block
       when_block
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_term)
-      body
+      pp_expr body
       pp_with_block
       with_block
 
-and pp_with_block out (with_block : with_block option) =
+and pp_with_block out (with_block : with_block) =
+  let block = 
+    match with_block with 
+    | [] -> "<none>"
+    | _ -> Format.asprintf "@[<v>%a@]" Format.(pp_print_list ~pp_sep:pp_print_cut pp_definition) with_block
+  in
   Format.fprintf
     out
-    "(wi@[<v>th@,%a@])"
-    Format.(
-      pp_print_option
-        ~none:(fun out () -> fprintf out "<none>")
-        (pp_print_list ~pp_sep:pp_print_cut pp_definition))
-    with_block
+    "(wi@[<v>th@,%s@])"
+    block
 ;;
 
 let pp_module out (mod_name : module_name) = Format.fprintf out "(module %s)" mod_name

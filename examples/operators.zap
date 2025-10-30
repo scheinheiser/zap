@@ -17,6 +17,6 @@ def ( $ ) f v := f v;
 
 dec main : ().
 def main := 
-  baz & bar & foo $ 10 in
+  let _ := baz & bar & foo $ 10 in
   print "hello zap!"
 ;;

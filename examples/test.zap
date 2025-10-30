@@ -24,8 +24,8 @@ dec length : string -> int.
 dec lamTest : int -> bool.
 def lamTest num :=
   let test_lambda : int -> string = fun n => show n in
-  Cons 10 in
-  length (test_lambda num) > 10 in
+  let _ := Cons 10 in
+  let _ := length (test_lambda num) > 10 in
   (test_lambda num) = "hi"
 ;;
 
@@ -33,9 +33,9 @@ dec caller : ('a -> 'b) -> 'a -> 'b.
 def caller f v := f v;;
 
 def failingUnification n :=
-  n + 1 in
-  n + 2 in
-  (n = 4) || (n = 10) in
+  let _ := n + 1 in
+  let _ := n + 2 in
+  let _ := (n = 4) || (n = 10) in
 
   % should fail
   % n :: ["hi"] in
@@ -48,8 +48,7 @@ def patTest (5, false, "hi") (10 :: rest) five :=
 
 dec main : ().
 def main := 
-  let func := fun n => n + 1 in
-  caller func "hi" in
+  let _ := caller (fun n => n + 1) "hi" in
   let str := "hello, zap" in
   print str
 ;;

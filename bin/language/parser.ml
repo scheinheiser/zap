@@ -398,6 +398,10 @@ module Parser = struct
       and loc = Location.combine s (Lexer.current_pos l) in
       s, Ast.Const (loc, Ast.Atom i)
     | s, IDENT i | s, UPPER_IDENT i -> s, Ast.Const (s, Ast.Ident i)
+    | s, LET -> parse_let l om s
+    | s, IF -> parse_if l om s
+    | s, LAM -> parse_lam l om s
+    | s, LBRACE -> parse_grouping l om s
     | s, LBRACK ->
       let es =
         match Lexer.current l |> snd with
@@ -408,36 +412,22 @@ module Parser = struct
       Location.combine s e, Ast.EList es
     | _, LPAREN ->
       let s = Lexer.current_pos l in
-      (match Lexer.current l with
-      | _, LET -> 
-        let e =  parse_let l om in
-        Lexer.consume l LPAREN "Expected ')' to end grouped expression.";
-        e
-      | _, IF -> 
-        let e = parse_if l om in
-        Lexer.consume l LPAREN "Expected ')' to end grouped expression.";
-        e
-      | _, LAM -> 
-        let e = parse_lam l om in
-        Lexer.consume l LPAREN "Expected ')' to end grouped expression.";
-        e
-      | _ ->
-        let loc, e = parse_expr l 0 om in
-        let expr =
-          match Lexer.current l with
-          | _, COMMA ->
-            Lexer.skip ~am:1 l;
-            Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (fun e -> parse_expr e 0 om))
-          | _, RPAREN -> e
-          | pos, tok ->
-            Error.report_err
-              ( Some pos
-              , Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok) )
-        in
-        let end' =
-          Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression."
-        in
-        Location.combine s end', expr)
+      let loc, e = parse_expr l 0 om in
+      let expr =
+        match Lexer.current l with
+        | _, COMMA ->
+          Lexer.skip ~am:1 l;
+          Ast.ETup ((loc, e) :: Lexer.separated_list l COMMA (fun e -> parse_expr e 0 om))
+        | _, RPAREN -> e
+        | pos, tok ->
+          Error.report_err
+            ( Some pos
+            , Printf.sprintf "Expected ')' or ',', but got '%s'." (Token.show tok) )
+      in
+      let end' =
+        Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression."
+      in
+      Location.combine s end', expr
     | s, KOP ->
       Lexer.consume l LPAREN "Expected '(' after 'op' keyword.";
       let pos, next = Lexer.advance l in
@@ -525,8 +515,8 @@ module Parser = struct
     in
     Location.combine s (Lexer.current_pos l), expr
 
-  and parse_let (l: Lexer.t) (om: operator_map): Ast.located_expr = 
-      let s = Lexer.consume_with_pos l LET "Expected 'let' to begin let-expression." in
+  and parse_let (l: Lexer.t) (om: operator_map) (s: Location.t): Ast.located_expr = 
+      (* let s = Lexer.consume_with_pos l LET "Expected 'let' to begin let-expression." in *)
       let p = parse_pattern l in
       let ty =
         match Lexer.current l with
@@ -547,13 +537,13 @@ module Parser = struct
       Lexer.consume l IN "Expected 'in' to end let-expression.";
       let n = parse_expr l 0 om in
       Location.combine s (Lexer.current_pos l), Ast.Let (p, ty, expr, n)
-  and parse_grouping (l: Lexer.t) (om: operator_map): Ast.located_expr = 
-      let s = Lexer.consume_with_pos l LBRACE "Expected '{' to begin grouping." in
+  and parse_grouping (l: Lexer.t) (om: operator_map) (s: Location.t): Ast.located_expr = 
+      (* let s = Lexer.consume_with_pos l LBRACE "Expected '{' to begin grouping." in *)
       let terms = parse_expr l 0 om in
       let e = Lexer.consume_with_pos l RBRACE "Expected '}' to end grouping." in
       Location.combine s e, Ast.Grouping terms
-  and parse_if (l: Lexer.t) (om: operator_map): Ast.located_expr =
-      let s = Lexer.consume_with_pos l IF "Expected 'if' to begin if statement." in
+  and parse_if (l: Lexer.t) (om: operator_map) (s: Location.t): Ast.located_expr =
+      (* let s = Lexer.consume_with_pos l IF "Expected 'if' to begin if statement." in *)
       let cond = parse_expr l 0 om in
       Lexer.consume l THEN "Expected 'then' keyword after if statement condition.";
       let texpr = parse_expr l 0 om in
@@ -565,8 +555,8 @@ module Parser = struct
         | e, _ -> None, e
       in
       Location.combine s e, Ast.If (cond, texpr, fexpr)
-  and parse_lam (l: Lexer.t) (om: operator_map): Ast.located_expr =
-      let s = Lexer.consume_with_pos l LAM "Expected 'fun' to begin lambda." in
+  and parse_lam (l: Lexer.t) (om: operator_map) (s: Location.t): Ast.located_expr =
+      (* let s = Lexer.consume_with_pos l LAM "Expected 'fun' to begin lambda." in *)
       let args = parse_args l in
       Lexer.consume l F_ARROW "Expected '=>' after lambda arguments.";
       let body = parse_expr l 0 om in

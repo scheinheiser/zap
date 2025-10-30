@@ -10,25 +10,26 @@ end = struct
 
   (* any binder above this value is user defined *)
   let user_bind = 17
-  let builtins = [ 
-      "print", 0
-      ; "+", 1
-      ; "+.", 2
-      ; "-", 3
-      ; "-.", 4
-      ; "*", 5
-      ; "*.", 6
-      ; "/", 7
-      ; "/.", 8
-      ; "<", 9
-      ; ">", 10
-      ; "<=", 11
-      ; ">=", 12
-      ; "=", 13
-      ; "/=", 14
-      ; "&&", 15
-      ; "||", 16
-      ; "::", 17
+
+  let builtins =
+    [ "print", 0
+    ; "+", 1
+    ; "+.", 2
+    ; "-", 3
+    ; "-.", 4
+    ; "*", 5
+    ; "*.", 6
+    ; "/", 7
+    ; "/.", 8
+    ; "<", 9
+    ; ">", 10
+    ; "<=", 11
+    ; ">=", 12
+    ; "=", 13
+    ; "/=", 14
+    ; "&&", 15
+    ; "||", 16
+    ; "::", 17
     ]
   ;;
 
@@ -48,10 +49,7 @@ end = struct
 
   let fresh_env () = VM.empty
 
-  let rename_list
-        ~(f : 'b VM.t -> 'a -> 'a * ('b VM.t))
-        (env : 'b VM.t)
-        (l : 'a list)
+  let rename_list ~(f : 'b VM.t -> 'a -> 'a * 'b VM.t) (env : 'b VM.t) (l : 'a list)
     : 'a list * 'b VM.t
     =
     let rec go acc e = function
@@ -136,14 +134,20 @@ end = struct
             | h :: t ->
               let a' = collect_idents a h in
               go a' t
-          in acc @ go [] ps
+          in
+          acc @ go [] ps
         | _ -> acc
       in
       (*TODO: shadow warning? *)
       let p, env = rename_pattern env p in
       let expr, _ = rename_expr env expr in
-      let env = 
-        let idents = collect_idents [] p |> List.map (fun i -> let i' = fresh_alpha i in (i, (i', false))) in
+      let env =
+        let idents =
+          collect_idents [] p
+          |> List.map (fun i ->
+            let i' = fresh_alpha i in
+            i, (i', false))
+        in
         let env = VM.to_list env in
         idents @ env |> VM.of_list
       in

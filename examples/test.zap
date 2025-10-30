@@ -48,7 +48,7 @@ def patTest (5, false, "hi") (10 :: rest) five :=
 
 dec main : ().
 def main := 
-  let _ := caller (fun n => n + 1) "hi" in
+  % let _ := caller (fun n => n + 1) "hi" in
   let str := "hello, zap" in
   print str
 ;;

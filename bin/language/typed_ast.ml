@@ -23,12 +23,7 @@ and expr =
 type located_definition = Location.t * definition
 
 and definition =
-  bool
-  * func
-  * Ast.located_ty
-  * Ast.located_pattern list
-  * typed_expr option
-  * typed_expr
+  bool * func * Ast.located_ty * Ast.located_pattern list * typed_expr option * typed_expr
 
 type program =
   module_name
@@ -63,13 +58,17 @@ let rec pp_expr out ((_, e) : located_expr) =
       l
       pp_typed_expr
       r
-  | Let (p, v, n) -> Format.fprintf out "@[(@[<hov>%a@ %a@])@,%a@]" Ast.pp_pattern p pp_typed_expr v pp_typed_expr n
-  | Grouping body ->
+  | Let (p, v, n) ->
     Format.fprintf
       out
-      "(@[<v>%a@])"
+      "(le@[<v>t %a %a@,%a@])"
+      Ast.pp_pattern
+      p
       pp_typed_expr
-      body
+      v
+      pp_typed_expr
+      n
+  | Grouping body -> Format.fprintf out "(@[<v>%a@])" pp_typed_expr body
   | If (cond, tbranch, fbranch) ->
     Format.fprintf
       out
@@ -90,7 +89,9 @@ let rec pp_expr out ((_, e) : located_expr) =
       body
 
 and pp_typed_expr out ((t, expr) : typed_expr) =
-  Format.fprintf out "(%a %a)" Ast.pp_ty t pp_expr expr
+  match expr with
+  | _, Let _ | _, Grouping _ | _, If _ | _, Lam _ -> Format.fprintf out "%a" pp_expr expr
+  | _ -> Format.fprintf out "(%a %a)" Ast.pp_ty t pp_expr expr
 ;;
 
 let pp_when_block out (when_block : typed_expr option) =

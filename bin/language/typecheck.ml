@@ -3,6 +3,7 @@ open Util
 
 (* type map *)
 module TM = Map.Make (String)
+
 type 'a base_type_map = 'a TM.t
 
 type env =
@@ -16,8 +17,8 @@ type env =
 
 (* utils *)
 let drop_last l = List.take (List.length l - 1) l
-let ( let* ) = (Base.Or_error.( >>= ))
-let ( let@ ) = (Base.Or_error.( >>| ))
+let ( let* ) = Base.Or_error.( >>= )
+let ( let@ ) = Base.Or_error.( >>| )
 
 let flatten_arrow (arrow : Ast.located_ty) : Ast.located_ty list =
   let rec go acc = function
@@ -71,12 +72,15 @@ let find_def i loc =
   let rec go = function
     | [] -> None
     | (idents, ty) :: t ->
-      (match List.filter ((=) i) idents with
-      | [] -> go t
-      | _ -> Some ty)
-  in go (builtin_defs loc)
+      (match List.filter (( = ) i) idents with
+       | [] -> go t
+       | _ -> Some ty)
+  in
+  go (builtin_defs loc)
+;;
 
 let fresh_tm () = TM.empty
+
 let fresh_env () =
   { var_env = fresh_tm ()
   ; func_env = fresh_tm ()
@@ -98,7 +102,7 @@ let init_func_env (env : env) (defs : Ast.located_definition list) : env =
   let rec associate_funcs acc = function
     | [] -> acc
     | (h, ty) :: t ->
-      let h = List.map (fun d -> (d, ty)) h in
+      let h = List.map (fun d -> d, ty) h in
       associate_funcs (h :: acc) t
   in
   { env with
@@ -143,26 +147,14 @@ let make_err (e : Error.t) : 'a Base.Or_error.t =
 
 let rec unify
           (env : env)
-          ~(location: Location.t)
-          ~(expect: Ast.located_ty)
+          ~(location : Location.t)
+          ~(expect : Ast.located_ty)
           ((loc', _) as r : Ast.located_ty)
   : env Base.Or_error.t
   =
   let open Ast in
   let open Base.Or_error in
-  let (loc, _) as l = expect in
-  let rec go e acc l r =
-    match l, r with
-    | [], [] -> acc
-    | h :: t, h' :: t' ->
-      (match unify e ~location:location ~expect:h h' with
-       | Ok e as e' -> go e (e' :: acc) t t'
-       | Error _ as e' -> go e (e' :: acc) t t')
-    | _ ->
-      raise
-        (Error.InternalError
-           "Internal error - called `go` within `unify` with mismatched list lengths.")
-  in
+  let ((loc, _) as l) = expect in
   let _, l = sub_ty env l in
   let _, r = sub_ty env r in
   match l, r with
@@ -170,14 +162,29 @@ let rec unify
   | l, Prim (PGeneric r) -> bind_ty env r (loc, l)
   | Udt ln, Udt rn when ln = rn -> Ok env
   | Prim l, Prim r when l = r -> Ok env
-  | Ctor (ln, l), Ctor (rn, r) when ln = rn -> unify env ~location:location ~expect:l r
-  | List l, List r -> unify env ~location:location ~expect:l r
+  | Ctor (ln, l), Ctor (rn, r) when ln = rn -> unify env ~location ~expect:l r
+  | List l, List r -> unify env ~location ~expect:l r
   | Tuple ls, Tuple rs when List.length ls = List.length rs ->
-    let@ es = go env [] ls rs |> combine_errors in
-    List.rev es |> List.hd
-  | Arrow (l1, r1), Arrow (l2, r2) -> 
-    let* env = unify env ~location:location ~expect:l1 l2 in 
-    unify env ~location:location ~expect:r1 r2
+    let e, wts =
+      let rec go e acc l r =
+        match l, r with
+        | [], [] -> e, acc
+        | h :: t, h' :: t' ->
+          (match unify e ~location ~expect:h h' with
+           | Ok e -> go e (Ok () :: acc) t t'
+           | Error _ as e' -> go e (e' :: acc) t t')
+        | _ ->
+          raise
+            (Error.InternalError
+               "Internal error - called `go` within `unify` with mismatched list lengths.")
+      in
+      go env [] ls rs
+    in
+    let@ _ = combine_errors wts in
+    replace_tyvars env e.tyvar_env
+  | Arrow (l1, r1), Arrow (l2, r2) ->
+    let* env = unify env ~location ~expect:l1 l2 in
+    unify env ~location ~expect:r1 r2
   | _ ->
     make_err
       ( Some location
@@ -211,31 +218,32 @@ and bind_ty (env : env) (n : string) ((p, t) : Ast.located_ty) : env Base.Or_err
   | Prim (PGeneric g) when g = n -> Ok env
   | _ when occurs_within (p, t) && is_internal n ->
     make_err (Some p, Printf.sprintf "Found infinite type: %s." n)
-  | _ -> 
+  | _ ->
     Printf.printf "bound %s to %s.\n" n (show_ty t);
     Ok { env with tyvar_env = add_value_type env.tyvar_env n (p, t) }
+
 and instantiate (t : Ast.located_ty) : Ast.located_ty =
   let open Ast in
   let is_internal = String.starts_with ~prefix:"t_" in
   let rec go env = function
-    | p, Prim (PGeneric g) as t ->
+    | (p, Prim (PGeneric g)) as t ->
       if is_internal g
       then t, env
-      else 
-        (match TM.find_opt g env with
+      else (
+        match TM.find_opt g env with
         | Some g' -> (p, Prim (PGeneric g')), env
         | None ->
           let g' = fresh_tyvar () in
           Printf.printf "instantiated %s to %s.\n" g g';
           let env = TM.add g g' env in
           (p, Prim (PGeneric g')), env)
-    | p, List t -> 
+    | p, List t ->
       let t, env = go env t in
       (p, List t), env
-    | p, Ctor (n, t) -> 
+    | p, Ctor (n, t) ->
       let t, env = go env t in
       (p, Ctor (n, t)), env
-    | p, Tuple ts -> 
+    | p, Tuple ts ->
       let rec aux acc e = function
         | [] -> List.rev acc, e
         | h :: t ->
@@ -244,13 +252,14 @@ and instantiate (t : Ast.located_ty) : Ast.located_ty =
       in
       let ts, env = aux [] env ts in
       (p, Tuple ts), env
-    | p, Arrow (l, r)  -> 
+    | p, Arrow (l, r) ->
       let l, env = go env l in
       let r, env = go env r in
       (p, Arrow (l, r)), env
     | p, t -> (p, t), env
   in
   fst @@ go TM.empty t
+;;
 
 let check_list
       ~(f : env -> 'a -> ('b * env) Base.Or_error.t)
@@ -319,7 +328,7 @@ let rec check_type (env : env) ((loc, t) : Ast.located_ty) : unit Base.Or_error.
          || (not @@ value_exists env.record_env u)
          || (not @@ value_exists env.variant_env u) ->
     make_err (Some loc, Printf.sprintf "Undefined type %s." u)
-  | Arrow (l, r) -> 
+  | Arrow (l, r) ->
     let* _ = check_type env l in
     check_type env r
   | List l -> check_type env l
@@ -360,15 +369,15 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
             | [] -> List.rev acc, e
             | h :: t' ->
               (match unify e ~location:loc ~expect:t h with
-              | Ok e -> go (Ok () :: acc) e t'
-              | Error _ as err -> go (err :: acc) e t')
+               | Ok e -> go (Ok () :: acc) e t'
+               | Error _ as err -> go (err :: acc) e t')
           in
           let wts, env = go [] env l' in
           let@ _ = combine_errors wts in
           (type_loc, List t), env))
   | PTup t ->
     let ty_list, env' = check_list ~f:get_pattern_type ~rev:true env t in
-    let@ t' = combine_errors ty_list in 
+    let@ t' = combine_errors ty_list in
     (loc, Tuple t'), env'
   | PCons (l, r) ->
     let* (loc1, l'), e = get_pattern_type env l in
@@ -377,7 +386,7 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
     (match r' with
      | Prim (PGeneric g) when is_internal g -> Ok ((loc', List (loc', l')), env')
      | List ((_, t) as t') ->
-       let@ env = unify env ~location:loc ~expect:t' (loc1, l') in 
+       let@ env = unify env ~location:loc ~expect:t' (loc1, l') in
        (loc', List (loc', t)), env
      | t ->
        make_err
@@ -530,7 +539,8 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
                    "Expected binary operator, but got operator with signature %s."
                    (show_ty esig) ))))
   | Let (p, typ, v, n) ->
-    let* ((t', _) as v), _ = check_expr env v in
+    let* ((t', _) as v), e = check_expr env v in
+    let env = replace_tyvars env e.tyvar_env in
     (match typ with
      | Some typ ->
        let* _ = check_type env typ in
@@ -585,27 +595,27 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
   let open Ast in
   let open Base.Or_error in
   let func_type = get_value_type env.func_env i in
-  let* with_block', e = 
+  let* with_block', e =
     match with_block with
-     | [] -> Ok ([], env)
-     | ds ->
-       let rec go acc = function
-         | [] -> acc
-         | (_, Dec (_, i, t)) :: tl -> go (TM.add i t acc) tl
-         | _ :: tl -> go acc tl
-       in
-       let env = { env with func_env = go env.func_env ds } in
-       let ds =
-         List.filter_map
-           (function
-             | _, Dec _ -> None
-             | loc', Def (hsd, i', args', when_block', body', with_block') ->
-               Some (loc', (hsd, i', args', when_block', body', with_block')))
-           ds
-       in
-       let ds, env = check_list ~f:check_def ~rev:true env ds in
-       let@ defs = combine_errors ds in
-       List.flatten defs, env
+    | [] -> Ok ([], env)
+    | ds ->
+      let rec go acc = function
+        | [] -> acc
+        | (_, Dec (_, i, t)) :: tl -> go (TM.add i t acc) tl
+        | _ :: tl -> go acc tl
+      in
+      let env = { env with func_env = go env.func_env ds } in
+      let ds =
+        List.filter_map
+          (function
+            | _, Dec _ -> None
+            | loc', Def (hsd, i', args', when_block', body', with_block') ->
+              Some (loc', (hsd, i', args', when_block', body', with_block')))
+          ds
+      in
+      let ds, env = check_list ~f:check_def ~rev:true env ds in
+      let@ defs = combine_errors ds in
+      List.flatten defs, env
   in
   let args', env =
     match func_type with
@@ -668,24 +678,24 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
       check_list2 ~f:unify_arg ~rev:false e t args
   in
   let* typed_args = combine_errors args' in
-  let* wb, env = 
-   match when_block with
-   | None -> Ok (None, env)
-   | Some wb ->
-     let* (((type_loc, _) as ty), wb), e = check_expr env wb in
-     let env = replace_tyvars env e.tyvar_env in
-     let@ _ = unify env ~location:loc ~expect:(type_loc, Prim PBool) ty in
-     Some ((type_loc, Prim PBool), wb), env
+  let* wb, env =
+    match when_block with
+    | None -> Ok (None, env)
+    | Some wb ->
+      let* (((type_loc, _) as ty), wb), e = check_expr env wb in
+      let env = replace_tyvars env e.tyvar_env in
+      let@ _ = unify env ~location:loc ~expect:(type_loc, Prim PBool) ty in
+      Some ((type_loc, Prim PBool), wb), env
   in
   let* body, e = check_expr env body in
   let env = replace_tyvars env e.tyvar_env in
-  let last = 
-    let rec get_type: Typed_ast.typed_expr -> Ast.located_ty = function
+  let last =
+    let rec get_type : Typed_ast.typed_expr -> Ast.located_ty = function
       | _, (_, Let (_, _, n)) -> get_type n
       | _, (_, Grouping n) -> get_type n
       | typ, _ -> typ
     in
-    get_type body 
+    get_type body
   in
   let ret = last :: typed_args |> List.rev |> build_arrow |> sub_ty env in
   match func_type with
@@ -726,11 +736,11 @@ let check_program ((n, imp, typs, defs) : Ast.program) : Typed_ast.program Base.
         | _ -> None)
       defs
   in
-  let* _ = 
-   match mains with
-   | [] -> make_err (None, "Expected entrypoint.")
-   | [ _ ] -> Ok ()
-   | _ -> make_err (None, "Multiple entrypoints found.")
+  let* _ =
+    match mains with
+    | [] -> make_err (None, "Expected entrypoint.")
+    | [ _ ] -> Ok ()
+    | _ -> make_err (None, "Multiple entrypoints found.")
   in
   let@ typed_defs = check_list ~f:check_def ~rev:true env defs |> fst |> combine_errors in
   n, imp, typs, List.flatten typed_defs

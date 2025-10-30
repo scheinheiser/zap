@@ -75,7 +75,11 @@ and expr =
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
   | ETup of located_expr list
-  | Let of located_pattern * located_ty option * located_expr * located_expr (* let p1 .. pn : <optional_ty> = e1 in e2 *)
+  | Let of
+      located_pattern
+      * located_ty option
+      * located_expr
+      * located_expr (* let p1 .. pn : <optional_ty> = e1 in e2 *)
   | Grouping of located_expr
   | If of located_expr * located_expr * located_expr option
   | Lam of located_pattern list * located_expr
@@ -100,12 +104,7 @@ type located_definition = Location.t * definition
 and definition =
   | Dec of bool * func * located_ty
   | Def of
-      bool
-      * func
-      * located_pattern list
-      * located_expr option
-      * located_expr
-      * with_block
+      bool * func * located_pattern list * located_expr option * located_expr * with_block
 (* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = located_definition list
@@ -251,17 +250,15 @@ let rec pp_expr out ((_, e) : located_expr) =
     Format.fprintf
       out
       "@[<v>(@[<hov>%a@ %a@ %a@])@,%a@]"
-      pp_pattern p
+      pp_pattern
+      p
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_ty)
       ty
       pp_expr
       v
-      pp_expr n
-  | Grouping body ->
-    Format.fprintf
-      out
-      "(@[<v>%a@])"
-      pp_expr body
+      pp_expr
+      n
+  | Grouping body -> Format.fprintf out "(@[<v>%a@])" pp_expr body
   | If (cond, tbranch, fbranch) ->
     Format.fprintf
       out
@@ -365,20 +362,22 @@ let rec pp_definition out ((_, def) : located_definition) =
       args
       pp_when_block
       when_block
-      pp_expr body
+      pp_expr
+      body
       pp_with_block
       with_block
 
 and pp_with_block out (with_block : with_block) =
-  let block = 
-    match with_block with 
+  let block =
+    match with_block with
     | [] -> "<none>"
-    | _ -> Format.asprintf "@[<v>%a@]" Format.(pp_print_list ~pp_sep:pp_print_cut pp_definition) with_block
+    | _ ->
+      Format.asprintf
+        "@[<v>%a@]"
+        Format.(pp_print_list ~pp_sep:pp_print_cut pp_definition)
+        with_block
   in
-  Format.fprintf
-    out
-    "(wi@[<v>th@,%s@])"
-    block
+  Format.fprintf out "(wi@[<v>th@,%s@])" block
 ;;
 
 let pp_module out (mod_name : module_name) = Format.fprintf out "(module %s)" mod_name

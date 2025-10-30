@@ -185,7 +185,7 @@ module ANF = struct
     | EList l | ETup l ->
       (* tuples are treated as lists (for now) *)
       let accumulate e ctx values = of_typed_expr e (fun v -> ctx (v :: values)) in
-      let base values: t =
+      let base values : t =
         let i = fresh_temp () in
         let e =
           let rec go last_name = function

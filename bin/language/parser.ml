@@ -375,7 +375,19 @@ module Parser = struct
   ;;
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
-  let rec parse_expr (l : Lexer.t) (limit : int) (om : operator_map) : Ast.located_expr =
+  let rec parse_expr (l: Lexer.t) (limit: int) (om: operator_map) : Ast.located_expr = 
+    let s, _ as e = parse_expr' l limit om in
+    match Lexer.current l with
+    | _, SEMI ->
+      Lexer.skip ~am:1 l;
+      let end', _ as next = parse_expr' l limit om in
+      let location = Location.combine s end' in
+      (* e1; e2 => let () = e1 in e2 *)
+      let pat = location, Ast.PConst (location, Ast.Unit) in
+      location, Ast.Let (pat, Some (location, Ast.Prim Ast.PUnit), e, next)
+    | _ -> e
+
+  and parse_expr' (l : Lexer.t) (limit : int) (om : operator_map) : Ast.located_expr =
     let ((s, _) as left) = nud l om in
     let rec go lf =
       if Lexer.current l |> snd |> Fun.flip get_bp om > limit
@@ -610,28 +622,14 @@ module Parser = struct
       match Lexer.current l with
       | _, WITH ->
         Lexer.skip l ~am:1;
-        let block =
-          Lexer.list_with_end
-            l
-            (fun t -> t = SEMI || SEMISEMI = t)
-            (Fun.flip parse_definition om)
-        in
-        block
-      | _, SEMISEMI | _, SEMI -> []
-      | pos, tok ->
-        Error.report_err
-          ( Some pos
-          , Printf.sprintf
-              "Expected either ';;', ';' or with-block to end function definition, but \
-               got '%s'."
-              (Token.show tok) )
+        let rec go l acc =
+          match Lexer.current l with
+          | _, DEC | _, DEF -> go l (parse_definition l om :: acc)
+          | _ -> List.rev acc
+        in go l []
+      | _ -> []
     in
-    let e =
-      Lexer.consume_any_of_with_pos
-        l
-        [ SEMISEMI; SEMI ]
-        "Expected ';;' or ';' to end function definition."
-    in
+    let e = Lexer.current_pos l in
     Location.combine s e, Ast.Def (hsd, n, args, when_block, body, with_block)
 
   and parse_dec (l : Lexer.t) : Ast.located_definition =

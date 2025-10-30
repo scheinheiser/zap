@@ -33,6 +33,8 @@ dec caller : ('a -> 'b) -> 'a -> 'b.
 def caller f v := f v;;
 
 def failingUnification n :=
+  print "hi";
+  let _ := n + 1 in
   let _ := n + 1 in
   let _ := n + 2 in
   let _ := (n = 4) || (n = 10) in

@@ -140,6 +140,12 @@ let rec show_ty = function
   | Udt t -> t
 ;;
 
+let rec is_irrefutable = function
+  | _, PWild | _, PConst (_, Ident _) -> true
+  | _, PCons (l, r) -> is_irrefutable l && is_irrefutable r
+  | _, PList l | _, PTup l -> List.fold_right (fun p acc -> is_irrefutable p && acc) l true
+  | _ -> false
+
 (* Pretty printing *)
 let pp_ident out (i : ident) = Format.fprintf out "%s" i
 
@@ -368,16 +374,17 @@ let rec pp_definition out ((_, def) : located_definition) =
       with_block
 
 and pp_with_block out (with_block : with_block) =
-  let block =
+  let block out () =
     match with_block with
-    | [] -> "<none>"
+    | [] -> Format.fprintf out "<none>"
     | _ ->
-      Format.asprintf
-        "@[<v>%a@]"
+      Format.fprintf
+        out
+        "%a"
         Format.(pp_print_list ~pp_sep:pp_print_cut pp_definition)
         with_block
   in
-  Format.fprintf out "(wi@[<v>th@,%s@])" block
+  Format.fprintf out "(wi@[<v>th@,%a@])" block ()
 ;;
 
 let pp_module out (mod_name : module_name) = Format.fprintf out "(module %s)" mod_name

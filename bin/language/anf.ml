@@ -199,27 +199,26 @@ module ANF = struct
         Let (i, ty, Ident "Nil", e)
       in
       (List.fold_right accumulate l base) []
-    (* | Let (i, t, n) -> *)
-    (*   let* t = of_typed_term t in *)
-    (*   let* n = of_typed_term n in *)
-    (*   Let (i, ty, t, n) *)
-    (* | If (cond, t, f') -> *)
-    (*   let* cond = of_typed_expr cond in *)
-    (*   let i, n = fresh_temp (), fresh_temp () in *)
-    (*   let go value = Jump (i, Some value) in *)
-    (*   (match f' with *)
-    (*    | None -> Join (i, Some n, f (Ident n), If (cond, of_typed_term t go, None)) *)
-    (*    | Some f' -> *)
-    (*      Join *)
-    (*        ( i *)
-    (*        , Some n *)
-    (*        , f (Ident n) *)
-    (*        , If (cond, of_typed_term t go, Some (of_typed_term f' go)) )) *)
-    (* | Grouping ts -> *)
-    (*   let i = fresh_temp () in *)
-    (*   let* ts' = of_term_list ts in *)
-    (*   let (_, ty), _ = List.rev ts |> List.hd in *)
-    (*   Let (i, ty, ts', f (Ident i)) *)
+    | Let (_, t, n) ->
+      let* t = of_typed_expr t in
+      let n = of_typed_expr n f in
+      Let ("hi", ty, t, n)
+    | If (cond, t, f') ->
+      let* cond = of_typed_expr cond in
+      let i, n = fresh_temp (), fresh_temp () in
+      let go value = Jump (i, Some value) in
+      (match f' with
+       | None -> Join (i, Some n, f (Ident n), If (cond, of_typed_expr t go, None))
+       | Some f' ->
+         Join
+           ( i
+           , Some n
+           , f (Ident n)
+           , If (cond, of_typed_expr t go, Some (of_typed_expr f' go)) ))
+    | Grouping ts ->
+      let i = fresh_temp () in
+      let* ts' = of_typed_expr ts in
+      Let (i, ty, ts', f (Ident i))
     | _ -> failwith "todo"
   ;;
 

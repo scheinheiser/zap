@@ -353,7 +353,7 @@ module Parser = struct
     | s, STRING i -> parse_cons l (s, Ast.PConst (s, Ast.String i))
     | s, CHAR i -> parse_cons l (s, Ast.PConst (s, Ast.Char i))
     | s, BOOL i -> parse_cons l (s, Ast.PConst (s, Ast.Bool i))
-    | s, UNIT -> parse_cons l (s, Ast.PConst (s, Ast.Unit))
+    | s, (TY_PRIM Ast.PUnit) -> parse_cons l (s, Ast.PConst (s, Ast.Unit))
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
@@ -374,19 +374,20 @@ module Parser = struct
     | _ -> left
   ;;
 
-  (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
   let rec parse_expr (l: Lexer.t) (limit: int) (om: operator_map) : Ast.located_expr = 
     let s, _ as e = parse_expr' l limit om in
     match Lexer.current l with
     | _, SEMI ->
       Lexer.skip ~am:1 l;
-      let end', _ as next = parse_expr' l limit om in
+      (* catches chained sequences, like e₁; e₂; e₃ *)
+      let end', _ as next = parse_expr l limit om in
       let location = Location.combine s end' in
-      (* e1; e2 => let () = e1 in e2 *)
+      (* e₁; e₂ => let () = e₁ in e₂ *)
       let pat = location, Ast.PConst (location, Ast.Unit) in
       location, Ast.Let (pat, Some (location, Ast.Prim Ast.PUnit), e, next)
     | _ -> e
 
+  (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
   and parse_expr' (l : Lexer.t) (limit : int) (om : operator_map) : Ast.located_expr =
     let ((s, _) as left) = nud l om in
     let rec go lf =
@@ -405,7 +406,7 @@ module Parser = struct
     | s, CHAR c -> s, Ast.Const (s, Ast.Char c)
     | s, STRING str -> s, Ast.Const (s, Ast.String str)
     | s, BOOL b -> s, Ast.Const (s, Ast.Bool b)
-    | s, UNIT -> s, Ast.Const (s, Ast.Unit)
+    | s, (TY_PRIM Ast.PUnit) -> s, Ast.Const (s, Ast.Unit)
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in

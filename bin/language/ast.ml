@@ -79,7 +79,7 @@ and expr =
       located_pattern
       * located_ty option
       * located_expr
-      * located_expr (* let p1 .. pn : <optional_ty> = e1 in e2 *)
+      * located_expr (* let p₁ ... pₙ : <optional_ty> = e1 in e2 *)
   | Grouping of located_expr
   | If of located_expr * located_expr * located_expr option
   | Lam of located_pattern list * located_expr

@@ -1,15 +1,15 @@
 % TODO: Change this to revolve around actual code, and work on syntax.
 @module TClass
 
-class Ord 'a : minimal (=) | (/=) =
+class 'a Ord : minimal (=) | (/=) =
   dec (=) : 'a -> 'a -> bool.
   def (=) l r := not (l /= r)
 
   dec (/=) : 'a -> 'a -> bool.
-  def (/=) l r := not (l = r);
+  def (/=) l r := not (l = r)
 ;;
 
-class Num 'a :=
+class 'a Num :=
   dec (+) : 'a -> 'a -> 'a.
   dec (-) : 'a -> 'a -> 'a.
   dec (*) : 'a -> 'a -> 'a.
@@ -18,15 +18,15 @@ class Num 'a :=
   dec compare : Ord 'a => 'a -> 'a -> bool.
 ;;
 
-instance Num int where
-  def (+) l r := l + r;
-  def (-) l r := l - r;
-  def (*) l r := l * r;
-  def (/) l r := l / r;
+instance int Num where
+  def (+) l r := l + r
+  def (-) l r := l - r
+  def (*) l r := l * r
+  def (/) l r := l / r
 
   def compare l r := l >= r
 ;;
 
-dec (^=) : (Ord 'a, Ord 'b) => 'a -> 'b -> bool.
+dec (^=) : ['a Ord; 'b Ord] => 'a -> 'b -> bool.
 
-dec (^+) : Num 'a => 'a -> 'b -> 'a.
+dec (^+) : ['a Num] => 'a -> 'b -> 'a.

@@ -626,6 +626,7 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
         );
       check_list ~f:get_pattern_type ~rev:false e args
     | Some dec_ty ->
+      (*TODO: allow η-reduction*)
       let rec unify_arg
                 (env : env)
                 ((ty_loc, l) : Ast.located_ty)

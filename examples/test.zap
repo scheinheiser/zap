@@ -20,37 +20,31 @@ type myRecord :=
 dec show : int -> string.
 dec length : string -> int.
 
+dec ignore : 'a -> ().
+def ignore _ := ()
+
 % let-binding function
 dec lamTest : int -> bool.
 def lamTest num :=
   let test_lambda : int -> string = fun n => show n in
-  let _ := Cons 10 in
-  let _ := length (test_lambda num) > 10 in
+  ignore (Cons 10);
+  ignore (length (test_lambda num) > 10);
   (test_lambda num) = "hi"
-;;
 
 dec caller : ('a -> 'b) -> 'a -> 'b.
-def caller f v := f v;;
+def caller f v := f v
 
 def failingUnification n :=
-  print "hi";
-  let _ := n + 1 in
-  let _ := n + 1 in
-  let _ := n + 2 in
-  let _ := (n = 4) || (n = 10) in
-
-  % should fail
-  % n :: ["hi"] in
+  ignore (n + 1);
+  ignore (n + 2);
+  ignore ((n = 4) || (n = 10));
   n
-;;
 
 def patTest (5, false, "hi") (10 :: rest) five :=
   print five
-;;
 
 dec main : ().
 def main := 
   % let _ := caller (fun n => n + 1) "hi" in
   let str := "hello, zap" in
   print str
-;;

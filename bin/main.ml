@@ -9,7 +9,7 @@ let border () =
 ;;
 
 let () =
-  let input = In_channel.(open_text "examples/operators.zap" |> input_all) in
+  let input = In_channel.(open_text "examples/test.zap" |> input_all) in
   (* let input = "(let _ := 10 in 10 + 2) + (let _ := 20 in 12 * 1)" in *)
   (* print_endline input; *)
   let l = Lexer.of_string input in

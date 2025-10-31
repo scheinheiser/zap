@@ -4,11 +4,11 @@
 @import Std
 
 dec* map : ('a -> 'b) -> 'a list -> 'b list.
-def* map _ [] := [];
-def* map f (x :: xs) := f x :: map f xs;
+def* map _ [] := []
+def* map f (x :: xs) := f x :: map f xs
 
 dec map : ('a, 'b) -> ('a -> 'b) -> ('b, 'b).
-def map (l, r) f := (f l, r);
+def map (l, r) f := (f l, r)
 
 dec main : ().
-def main := print "hello, zap!";
+def main := print "hello, zap!"

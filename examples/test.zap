@@ -27,17 +27,17 @@ def ignore _ := ()
 dec lamTest : int -> bool.
 def lamTest num :=
   let test_lambda : int -> string = fun n => show n in
-  ignore (Cons 10);
-  ignore (length (test_lambda num) > 10);
+  ignore (Cons 10);;
+  ignore (length (test_lambda num) > 10);;
   (test_lambda num) = "hi"
 
 dec caller : ('a -> 'b) -> 'a -> 'b.
 def caller f v := f v
 
 def failingUnification n :=
-  ignore (n + 1);
-  ignore (n + 2);
-  ignore ((n = 4) || (n = 10));
+  ignore (n + 1);;
+  ignore (n + 2);;
+  ignore ((n = 4) || (n = 10));;
   n
 
 def patTest (5, false, "hi") (10 :: rest) five :=

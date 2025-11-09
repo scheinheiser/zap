@@ -19,6 +19,7 @@ and expr =
   | Grouping of typed_expr
   | If of typed_expr * typed_expr * typed_expr option
   | Lam of Ast.located_pattern list * typed_expr
+  | Match of typed_expr * (Ast.located_pattern * typed_expr option * typed_expr) list
 
 type located_definition = Location.t * definition
 
@@ -87,10 +88,30 @@ let rec pp_expr out ((_, e) : located_expr) =
       args
       pp_typed_expr
       body
+  | Match (cond, bs) ->
+    let pp_branch out (p, wb, b) =
+      Format.fprintf
+        out
+        "(wh@[<v>en %a@,%a %a@])"
+        Format.(pp_print_option ~none:(fun out () -> fprintf out "true") pp_typed_expr)
+        wb
+        Ast.pp_pattern
+        p
+        pp_typed_expr
+        b
+    in
+    Format.fprintf
+      out
+      "(ma@[<v>tch (%a)@,%a@])"
+      pp_typed_expr
+      cond
+      Format.(pp_print_list ~pp_sep:pp_print_cut pp_branch)
+      bs
 
 and pp_typed_expr out ((t, expr) : typed_expr) =
   match expr with
-  | _, Let _ | _, Grouping _ | _, If _ | _, Lam _ -> Format.fprintf out "%a" pp_expr expr
+  | _, Let _ | _, Grouping _ | _, If _ | _, Lam _ | _, Match _ ->
+    Format.fprintf out "%a" pp_expr expr
   | _ -> Format.fprintf out "(%a %a)" Ast.pp_ty t pp_expr expr
 ;;
 

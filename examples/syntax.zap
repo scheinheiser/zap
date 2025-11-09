@@ -61,7 +61,6 @@ def map := go
     % you can omit the dec for functions/variables in with-blocks
     def* go _ [] := []
     def* go f (x :: xs) := f x :: go f xs
-;;
 
 % let-binding function
 dec lamTest : int -> bool.

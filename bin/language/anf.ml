@@ -35,7 +35,7 @@ module ANF = struct
     | Int i -> fprintf out "%d" i
     | String s -> fprintf out "\"%s\"" s
     | Ident i -> fprintf out "%s" i
-    | Char c -> fprintf out "'%c'" c
+    | Char c -> fprintf out "'%s'" (Char.escaped c)
     | Float f -> fprintf out "%.3f" f
     | Bool b -> fprintf out "%b" b
     | Atom a -> fprintf out "@%s" a

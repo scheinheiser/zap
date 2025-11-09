@@ -43,6 +43,8 @@
     ("true", BOOL true);
     ("false", BOOL false);
     ("when", WHEN);
+    ("match", MATCH);
+    ("to", TO);
     ("dec", DEC);
     ("def", DEF);
     ("type", TYPE);
@@ -115,6 +117,8 @@ rule token = parse
               | (Some op'') -> op''
               | None        -> OP op'
      in with_pos lexbuf tok}
+  | '\''        {tokenize_char lexbuf}
+  | '\"'        {tokenize_string (Buffer.create 20) lexbuf}
   | ident as i
     {let tok = match (List.assoc_opt i keywords) with
                 | (Some t)               -> t
@@ -122,8 +126,6 @@ rule token = parse
                 | None when is_upper i   -> UPPER_IDENT i
                 | None                   -> IDENT i
       in with_pos lexbuf tok}
-  | '\''        {tokenize_char lexbuf}
-  | '\"'        {tokenize_string (Buffer.create 20) lexbuf}
   | eof         {with_pos lexbuf EOF}
   | _ as c      {
     let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Unrecognised character: '%c'." c) in

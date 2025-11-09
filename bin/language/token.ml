@@ -16,6 +16,8 @@ and token =
   | KOP
   | WHEN
   | WITH
+  | MATCH
+  | TO
   | WITHOUT
   | RASSOC
   | LASSOC
@@ -95,6 +97,8 @@ let show (t : token) : string =
   | KOP -> "KOP"
   | WHEN -> "WHEN"
   | WITH -> "WITH"
+  | MATCH -> "MATCH"
+  | TO -> "TO"
   | WITHOUT -> "WITHOUT"
   | RASSOC -> "RASSOC"
   | LASSOC -> "LASSOC"

@@ -63,6 +63,7 @@ and pattern =
   | PWild (* _ *)
   | PConst of located_const
   | PCons of located_pattern * located_pattern
+  | PCtor of ident * located_pattern
   | PList of located_pattern list
   | PTup of located_pattern list
 
@@ -81,6 +82,7 @@ and expr =
       * located_expr
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e1 in e2 *)
   | Grouping of located_expr
+  | Match of located_expr * (located_pattern * located_expr option * located_expr) list
   | If of located_expr * located_expr * located_expr option
   | Lam of located_pattern list * located_expr
 
@@ -134,17 +136,11 @@ let rec show_ty = function
   | List (_, t) -> Printf.sprintf "[%s]" (show_ty t)
   | Ctor (c, (_, t)) -> Printf.sprintf "%s %s" c (show_ty t)
   | Tuple ts ->
-    let ts' = List.map (fun (_, t) -> show_ty t) ts in
-    "(" ^ String.concat ", " ts' ^ ")"
+    let ts = List.map (fun (_, t) -> show_ty t) ts in
+    Printf.sprintf "(%s)" (String.concat ", " ts)
   | Prim p -> show_prim p
   | Udt t -> t
 ;;
-
-let rec is_irrefutable = function
-  | _, PWild | _, PConst (_, Ident _) -> true
-  | _, PCons (l, r) -> is_irrefutable l && is_irrefutable r
-  | _, PList l | _, PTup l -> List.fold_right (fun p acc -> is_irrefutable p && acc) l true
-  | _ -> false
 
 (* Pretty printing *)
 let pp_ident out (i : ident) = Format.fprintf out "%s" i
@@ -183,7 +179,7 @@ let pp_const out ((_, c) : located_const) =
   | Int i -> Format.fprintf out "%d" i
   | Float f -> Format.fprintf out "%.3f" f
   | String s -> Format.fprintf out "\"%s\"" s
-  | Char c' -> Format.fprintf out "'%c'" c'
+  | Char c -> Format.fprintf out "'%s'" (Char.escaped c)
   | Bool b -> Format.fprintf out "%b" b
   | Atom a -> Format.fprintf out "%@%s" a
   | Unit -> Format.fprintf out "()"
@@ -232,6 +228,7 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
       ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
+  | PCtor (i, v) -> Format.fprintf out "(%s %a)" i pp_pattern v
 ;;
 
 let rec pp_expr out ((_, e) : located_expr) =
@@ -268,7 +265,7 @@ let rec pp_expr out ((_, e) : located_expr) =
   | If (cond, tbranch, fbranch) ->
     Format.fprintf
       out
-      "(if @[<v>%a@,%a@,%a@])"
+      "(if@[<v> %a@,%a@,%a@])"
       pp_expr
       cond
       pp_expr
@@ -278,11 +275,30 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Lam (args, body) ->
     Format.fprintf
       out
-      "(lam @[<v>(%a) %a@])"
+      "(la@[<v>m (%a) %a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern)
       args
       pp_expr
       body
+  | Match (cond, bs) ->
+    let pp_branch out (p, wb, b) =
+      Format.fprintf
+        out
+        "(wh@[<v>en %a@,%a %a@])"
+        Format.(pp_print_option ~none:(fun out () -> fprintf out "true") pp_expr)
+        wb
+        pp_pattern
+        p
+        pp_expr
+        b
+    in
+    Format.fprintf
+      out
+      "(ma@[<v>tch (%a)@,%a@])"
+      pp_expr
+      cond
+      Format.(pp_print_list ~pp_sep:pp_print_cut pp_branch)
+      bs
 ;;
 
 let pp_import_cond out (cond : import_cond) =

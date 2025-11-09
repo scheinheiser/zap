@@ -76,20 +76,28 @@ end = struct
     match pat with
     | PConst (s, Ident i) ->
       let i' = fresh_alpha i in
-      let env' = VM.add i (i', false) env in
-      (loc, PConst (s, Ident i')), env'
+      let env = VM.add i (i', false) env in
+      (loc, PConst (s, Ident i')), env
     | PConst _ -> (loc, pat), env
     | PWild -> (loc, pat), env
     | PCons (l, r) ->
-      let l', env' = rename_pattern env l in
-      let r', env'' = rename_pattern env' r in
-      (loc, PCons (l', r')), env''
+      let l, env = rename_pattern env l in
+      let r, env = rename_pattern env r in
+      (loc, PCons (l, r)), env
+    | PCtor (i, v) ->
+      let i =
+        match VM.find_opt i env with
+        | Some (i', _) -> i'
+        | None -> i
+      in
+      let v, env = rename_pattern env v in
+      (loc, PCtor (i, v)), env
     | PList items ->
-      let items', env' = rename_list ~f:rename_pattern env items in
-      (loc, PList items'), env'
+      let items, env = rename_list ~f:rename_pattern env items in
+      (loc, PList items), env
     | PTup items ->
-      let items', env' = rename_list ~f:rename_pattern env items in
-      (loc, PTup items'), env'
+      let items, env = rename_list ~f:rename_pattern env items in
+      (loc, PTup items), env
   ;;
 
   let rec rename_expr (env : (string * bool) VM.t) ((loc, expr) : Ast.located_expr)
@@ -171,6 +179,18 @@ end = struct
       let ps, env = rename_list ~f:rename_pattern env ps in
       let t, _ = rename_expr env t in
       (loc, Lam (ps, t)), env
+    | Match (e, bs) ->
+      let e, _ = rename_expr env e in
+      let bs =
+        List.map
+          (fun (p, wb, expr) ->
+             let p, _ = rename_pattern env p in
+             let wb = Base.Option.map wb ~f:(Fun.compose fst (rename_expr env)) in
+             let expr, _ = rename_expr env expr in
+             p, wb, expr)
+          bs
+      in
+      (loc, Match (e, bs)), env
   ;;
 
   let rec rename_definition

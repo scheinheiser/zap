@@ -9,9 +9,7 @@ let border () =
 ;;
 
 let () =
-  let input = In_channel.(open_text "examples/test.zap" |> input_all) in
-  (* let input = "(let _ := 10 in 10 + 2) + (let _ := 20 in 12 * 1)" in *)
-  (* print_endline input; *)
+  let input = In_channel.(open_text "examples/match.zap" |> input_all) in
   let l = Lexer.of_string input in
   let res' = Parser.parse_program l in
   let res = Alpha.rename_program res' in
@@ -21,5 +19,5 @@ let () =
   | Ok p ->
     (* ANF.of_typed_program p |> fun p -> ANF.pp_program Format.std_formatter p *)
     Typed_ast.pp_typed_program Format.std_formatter p
-  | Error e -> print_endline (Base.Error.to_string_hum e)
+  | Error e -> Printf.printf "%s\n" (Base.Error.to_string_hum e)
 ;;

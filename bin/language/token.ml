@@ -26,9 +26,10 @@ and token =
   | ELSE
   | DEC
   | TYPE
+  | FORALL
   | TILDE
   | DEF
-  | LAM
+  | FUN
   | LET
   | IN
   | MODULE
@@ -107,9 +108,10 @@ let show (t : token) : string =
   | ELSE -> "ELSE"
   | DEC -> "DEC"
   | TYPE -> "TYPE"
+  | FORALL -> "FORALL"
   | TILDE -> "TILDE"
   | DEF -> "DEF"
-  | LAM -> "LAM"
+  | FUN -> "FUN"
   | LET -> "LET"
   | IN -> "IN"
   | MODULE -> "MODULE"

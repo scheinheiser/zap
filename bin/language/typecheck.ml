@@ -7,12 +7,12 @@ module TM = Map.Make (String)
 type 'a base_type_map = 'a TM.t
 
 type env =
-  { func_env    : Ast.located_ty base_type_map
-  ; var_env     : Ast.located_ty base_type_map
-  ; alias_env   : Ast.located_ty base_type_map
-  ; record_env  : (Ast.located_ty list) base_type_map
-  ; variant_env : (Ast.located_ty base_type_map) base_type_map
-  ; tyvar_env   : Ast.located_ty base_type_map
+  { func_env    : Ast.quantified_ty base_type_map
+  ; var_env     : Ast.quantified_ty base_type_map
+  ; alias_env   : Ast.quantified_ty base_type_map
+  ; record_env  : (Ast.quantified_ty list) base_type_map
+  ; variant_env : (Ast.quantified_ty base_type_map) base_type_map
+  ; tyvar_env   : Ast.quantified_ty base_type_map
   } [@@ocamlformat "disable"]
 
 (* utils *)
@@ -39,17 +39,17 @@ let rec build_arrow = function
 let builtin_defs loc =
   let open Ast in
   [ (* dec print : string -> (). *)
-    ["print"], (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)))
+    ["print"], Mono (loc, Arrow ((loc, Prim PString), (loc, Prim PUnit)))
   ; (* dec ( + | - | * | / ) : int -> int -> int. *)
-    ["+"; "-"; "*"; "/"], (loc, Arrow ((loc, Prim PInt), (loc, Arrow ((loc, Prim PInt), (loc, Prim PInt)))))
+    ["+"; "-"; "*"; "/"], Mono (loc, Arrow ((loc, Prim PInt), (loc, Arrow ((loc, Prim PInt), (loc, Prim PInt)))))
   ; (* dec ( +. | -. | *. | /. ) : float -> float -> float. *)
-    ["+."; "-."; "*."; "/."], (loc, Arrow ((loc, Prim PFloat), (loc, Arrow ((loc, Prim PFloat), (loc, Prim PFloat)))))
-  ; (* dec ( < | > | <= | >= | = | /= ) : 'a -> 'a -> bool. *)
-    ["<"; ">"; "<="; ">="; "="; "/="], (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Prim PBool)))))
+    ["+."; "-."; "*."; "/."], Mono (loc, Arrow ((loc, Prim PFloat), (loc, Arrow ((loc, Prim PFloat), (loc, Prim PFloat)))))
+  ; (* dec ( < | > | <= | >= | = | /= ) : Uni 'a. 'a -> 'a -> bool. *)
+    ["<"; ">"; "<="; ">="; "="; "/="], Uni (["'a"], (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Prim PBool))))))
   ; (* dec ( && | || ) : bool -> bool -> bool. *)
-    ["&&"; "||"], (loc, Arrow ((loc, Prim PBool), (loc, Arrow ((loc, Prim PBool), (loc, Prim PBool)))))
-  ; (* dec ( :: ) : 'a -> 'a list -> 'a list. *)
-    ["::"], (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, Prim (PGeneric "'a"))), (loc, List (loc, Prim (PGeneric "'a")))))))
+    ["&&"; "||"], Mono (loc, Arrow ((loc, Prim PBool), (loc, Arrow ((loc, Prim PBool), (loc, Prim PBool)))))
+  ; (* dec ( :: ) : Uni 'a. 'a -> 'a list -> 'a list. *)
+    ["::"], Uni (["'a"], (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, Prim (PGeneric "'a"))), (loc, List (loc, Prim (PGeneric "'a"))))))))
   ] [@@ocamlformat "disable"]
 
 let find_def i loc =
@@ -121,7 +121,7 @@ let add_value_type (value_env : 'a base_type_map) (i : string) (v : 'a) : 'a bas
 ;;
 
 (* used to remove any unresolved type variables in future code that have already been resolved *)
-let replace_tyvars (env : env) (tenv : Ast.located_ty base_type_map) : env =
+let replace_tyvars (env : env) (tenv : Ast.quantified_ty base_type_map) : env =
   { env with tyvar_env = tenv }
 ;;
 
@@ -176,12 +176,11 @@ let rec unify
 
 and sub_ty (env : env) ((p, t) : Ast.located_ty) : Ast.located_ty =
   let open Ast in
-  let is_internal = String.starts_with ~prefix:"t_" in
   match t with
-  | Prim (PGeneric g) when is_internal g ->
+  | Prim (PGeneric g) ->
     (match get_value_type env.tyvar_env g with
      | None -> p, t
-     | Some ty -> sub_ty env ty)
+     | Some ty -> instantiate ty |> sub_ty env)
   | List ty -> p, List (sub_ty env ty)
   | Tuple ts -> p, Tuple (List.map (fun t -> sub_ty env t) ts)
   | Arrow (l, r) -> p, Arrow (sub_ty env l, sub_ty env r)
@@ -202,31 +201,36 @@ and bind_ty (env : env) (n : string) ((p, t) : Ast.located_ty) : env Base.Or_err
   | Prim (PGeneric g) when g = n -> Ok env
   | _ when occurs_within (p, t) && is_internal n ->
     make_err (Some p, Printf.sprintf "Found infinite type: %s." n)
-  | _ ->
-    (* Printf.printf "bound %s to %s.\n" n (show_ty t); *)
-    Ok { env with tyvar_env = add_value_type env.tyvar_env n (p, t) }
+  | _ -> Ok { env with tyvar_env = add_value_type env.tyvar_env n (Mono (p, t)) }
 
-and instantiate (t : Ast.located_ty) : Ast.located_ty =
+and instantiate (t : Ast.quantified_ty) : Ast.located_ty =
   let open Ast in
   let is_internal = String.starts_with ~prefix:"t_" in
+  let (env : string TM.t) =
+    (match t with
+    | Mono _ -> []
+    | Uni (gs, _) -> 
+      List.map (fun i -> i, fresh_tyvar ()) gs)
+    |> TM.of_list
+  in
   let rec go env = function
-    | (p, Prim (PGeneric g)) as t ->
-      if is_internal g
-      then t, env
-      else (
-        match TM.find_opt g env with
-        | Some g' -> (p, Prim (PGeneric g')), env
-        | None ->
-          let g' = fresh_tyvar () in
-          (* Printf.printf "instantiated %s to %s.\n" g g'; *)
-          let env = TM.add g g' env in
-          (p, Prim (PGeneric g')), env)
+    | (p, Prim (PGeneric g)) ->
+      (match TM.find_opt g env with
+      | Some g' -> (p, Prim (PGeneric g')), env
+      | None ->
+        let g' =
+          if is_internal g
+          then g
+          else fresh_tyvar ()
+        in
+        let env = TM.add g g' env in
+        (p, Prim (PGeneric g')), env)
     | p, List t ->
       let t, env = go env t in
       (p, List t), env
     | p, Ctor (n, t) ->
       let t, env = go env t in
-      (p, Ctor (n, t)), env
+     (p, Ctor (n, t)), env
     | p, Tuple ts ->
       let rec aux acc e = function
         | [] -> List.rev acc, e
@@ -242,7 +246,32 @@ and instantiate (t : Ast.located_ty) : Ast.located_ty =
       (p, Arrow (l, r)), env
     | p, t -> (p, t), env
   in
-  fst @@ go TM.empty t
+  fst @@ go env (get_quantified_ty t)
+
+and generalise (env: env) (ty: Ast.located_ty) : Ast.quantified_ty =
+  let open Ast in
+  let module S = Set.Make (String) in
+  let rec collect_tyvars acc = function
+    | _, Arrow (l, r) ->
+      let acc = collect_tyvars acc l in
+      let acc = collect_tyvars acc r in
+      acc
+    | _, List t -> collect_tyvars acc t
+    | _, Ctor (_, t) -> collect_tyvars acc t
+    | _, Tuple ts ->
+      let rec go acc = function
+        | [] -> acc
+        | h :: t ->
+          let acc = collect_tyvars acc h in
+          go acc t
+      in go acc ts
+    | _, Prim (PGeneric g) -> S.add g acc
+    | _ -> acc
+  in
+  let vars = sub_ty env ty |> collect_tyvars S.empty in
+  match S.to_list vars with
+  | [] -> Mono ty
+  | vars -> Uni (vars, ty)
 ;;
 
 let check_list
@@ -330,12 +359,14 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
   match pat with
   | PConst (_, Ident i) ->
     let t = loc, Prim (PGeneric (fresh_tyvar ())) in
-    let env' = { env with var_env = add_value_type env.var_env i t } in
+    let env' = { env with var_env = add_value_type env.var_env i (Mono t) } in
     Ok (t, env')
   | PConst c -> Ok (get_const_type c, env)
   | PList l ->
     (match l with
-     | [] -> Ok ((loc, Prim (PGeneric (fresh_tyvar ()))), env)
+     | [] ->
+        let t = loc, Prim (PGeneric (fresh_tyvar ())) in
+        Ok ((loc, List t), env)
      | items ->
        let ty_list, env' = check_list ~f:get_pattern_type ~rev:true env items in
        let* l' = combine_errors ty_list in
@@ -347,7 +378,9 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
            l'
        in
        (match non_generic with
-        | None -> Ok ((loc, Prim (PGeneric (fresh_tyvar ()))), env')
+        | None -> 
+          let t = loc, Prim (PGeneric (fresh_tyvar ())) in
+          Ok ((loc, List t), env')
         | Some ((type_loc, _) as t) ->
           let rec go acc e = function
             | [] -> List.rev acc, e
@@ -386,7 +419,7 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
         (match get_value_type vs i with
         | None -> aux rest
         | Some t -> 
-          let t = sub_ty env t |> instantiate |> flatten_arrow in
+          let t = instantiate t |> sub_ty env |> flatten_arrow in
           (*NOTE: this'll likely cause issues with variants that contain function signatures.*)
           let@ env = unify env ~location:loc ~expect:(List.hd t) v in
           (* we can safely use the _exn version as every constructor will return the overarching type *)
@@ -436,7 +469,9 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
     let es', env = check_list ~f:check_expr ~rev:true env es in
     let* exprs = combine_errors es' in
     (match exprs with
-     | [] -> Ok (((loc, Prim (PGeneric (fresh_tyvar ()))), (loc, Typed_ast.EList [])), env)
+     | [] -> 
+        let t = loc, Prim (PGeneric (fresh_tyvar ())) in
+        Ok (((loc, List t), (loc, Typed_ast.EList [])), env)
      | (((ty_loc, _) as t), _) :: tl ->
        let rec go e acc = function
          | [] -> acc, e
@@ -459,12 +494,12 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
            | (_, vs) :: rest ->
              (match get_value_type vs i with
               | None -> aux rest
-              | Some t -> Ok ((sub_ty env t |> instantiate, (loc, Typed_ast.Const (s, Ident i))), env))
+              | Some t -> Ok ((instantiate t |> sub_ty env, (loc, Typed_ast.Const (s, Ident i))), env))
          in
          aux @@ TM.to_list env.variant_env
       | Some t -> 
-        Ok ((sub_ty env t |> instantiate, (loc, Typed_ast.Const (s, Ident i))), env))
-     | Some t -> Ok ((sub_ty env t |> instantiate, (loc, Typed_ast.Const (s, Ident i))), env))
+        Ok ((instantiate t |> sub_ty env, (loc, Typed_ast.Const (s, Ident i))), env))
+     | Some t -> Ok ((instantiate t |> sub_ty env, (loc, Typed_ast.Const (s, Ident i))), env))
   | Const c -> Ok ((get_const_type c, (loc, Typed_ast.Const c)), env)
   | ETup contents ->
     let contents, env = check_list env ~f:check_expr ~rev:true contents in
@@ -486,7 +521,7 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
       else (
         let i = Alpha.find_ident (loc, e) in
         match find_def i loc with
-        | Some bt -> bt
+        | Some bt -> instantiate bt
         | None -> raise (Error.InternalError "Internal error - improper binder."))
     in
     let left_conn = List.hd (flatten_arrow lt)
@@ -532,12 +567,10 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
      | User_op i ->
        (match get_value_type env.func_env i with
         | None -> make_err (Some loc, Printf.sprintf "Undefined operator - %s." i)
-        | Some ((_, esig) as fsig) ->
+        | Some fsig ->
+          let (_, esig) as fsig = instantiate fsig in
           (match flatten_arrow fsig with
            | lt' :: rt' :: ret ->
-             let lt' = instantiate lt'
-             and rt' = instantiate rt' 
-             and ret = List.map instantiate ret in
              let* env = unify env ~location:loc ~expect:lt' lt in
              let@ env = unify env ~location:loc ~expect:rt' rt in
              (build_arrow ret, (loc, Typed_ast.Bop (l', op, r'))), env
@@ -552,7 +585,8 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
     let env = replace_tyvars env e.tyvar_env in
     (match typ with
      | Some typ ->
-       let* _ = check_type env typ in
+       let* _ = check_type env (get_quantified_ty typ) in
+       let typ = instantiate typ in
        let* env = 
           let* env = unify env ~location:loc ~expect:typ t' in
           let* p, env = get_pattern_type env p in
@@ -669,6 +703,8 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
   let (args', env), eta_extra =
     match func_type with
     | Some dec_ty ->
+      let dec_ty = instantiate dec_ty in
+      Printf.printf "%s dec_ty: %s\n" i (snd dec_ty |> show_ty);
       let t = flatten_arrow dec_ty |> drop_last in
       (match () with
       (* kinda hacky, but whatever *)
@@ -715,12 +751,14 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
   let ret = last @ typed_args |> List.rev |> build_arrow |> sub_ty env in
   match func_type with
   | None ->
+    let ret = generalise env ret in
     let env = { env with func_env = add_value_type env.func_env i ret } in
     let d = loc, (hsd, i, ret, args, wb, body) in
     Ok (d :: with_block', env)
   | Some dec_ty ->
+    let dec_ty = instantiate dec_ty in
     let@ env = unify env ~location:loc ~expect:dec_ty ret in
-    let d = loc, (hsd, i, dec_ty, args, wb, body) in
+    let d = loc, (hsd, i, (generalise env dec_ty), args, wb, body) in
     d :: with_block', env
 ;;
 
@@ -746,7 +784,7 @@ let check_program
           Some (loc, (hsd, i, args, when_block, body, with_block)))
       defs
   in
-  let* _ = List.map (fun (_, t) -> check_type env t) decs |> combine_errors in
+  let* _ = List.map (fun (_, t) -> match t with | Ast.Uni (_, t) | Ast.Mono t -> check_type env t) decs |> combine_errors in
   let mains =
     List.filter_map
       (function

@@ -48,7 +48,8 @@
     ("dec", DEC);
     ("def", DEF);
     ("type", TYPE);
-    ("fun", LAM);
+    ("forall", FORALL);
+    ("fun", FUN);
     ("op", KOP);
   ]
 

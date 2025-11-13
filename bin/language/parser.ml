@@ -309,6 +309,19 @@ module Parser = struct
     | _ -> left
   ;;
 
+  let parse_quantified_ty (l: Lexer.t) : Ast.quantified_ty =
+    match Lexer.current l with
+    | _, FORALL ->
+      Lexer.consume l FORALL "Expected 'forall' to begin quantified type.";
+      let gs =
+        let parse_tvar l = Lexer.consume_with l (function TY_PRIM (Ast.PGeneric g) -> Some g | _ -> None) "Expected a type variable." in
+        Lexer.list_with_end l ((=) DOT) parse_tvar
+      in
+      Lexer.consume l DOT "Expected '.' to end type quantification.";
+      let ty = parse_ty l in
+      Ast.Uni (gs, ty)
+    | _ -> Ast.Mono (parse_ty l)
+
   let rec parse_args (l : Lexer.t) : Ast.located_pattern list =
     Lexer.list_with_end
       l
@@ -398,7 +411,7 @@ module Parser = struct
       let location = Location.combine s end' in
       (* e₁;; e₂ => let () = e₁ in e₂ *)
       let pat = location, Ast.PConst (location, Ast.Unit) in
-      location, Ast.Let (pat, Some (location, Ast.Prim Ast.PUnit), e, next)
+      location, Ast.Let (pat, Some (Ast.Mono (location, Ast.Prim Ast.PUnit)), e, next)
     | _ -> e
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
@@ -428,7 +441,7 @@ module Parser = struct
     | s, IDENT i | s, UPPER_IDENT i -> s, Ast.Const (s, Ast.Ident i)
     | s, LET -> parse_let l om s
     | s, IF -> parse_if l om s
-    | s, LAM -> parse_lam l om s
+    | s, FUN -> parse_lam l om s
     | s, MATCH -> parse_match l om s
     | s, LBRACE -> parse_grouping l om s
     | s, LBRACK ->
@@ -550,9 +563,9 @@ module Parser = struct
       match Lexer.current l with
       | _, COLON ->
         Lexer.skip ~am:1 l;
-        let ty' = parse_ty l in
+        let ty = parse_quantified_ty l in
         Lexer.consume l EQ "Expected '=' after type in let-expression.";
-        Some ty'
+        Some ty
       | _, ASSIGNMENT ->
         Lexer.skip ~am:1 l;
         None
@@ -623,7 +636,6 @@ module Parser = struct
             "Expected 'dec' or 'def' keyword to begin a definition, but got '%s'."
             (Token.show tok) )
 
-  (*TODO: fix the positional tracking, taking the current pos at the very end means that it'll have the location of the next dec *)
   and parse_def (l : Lexer.t) (om : operator_map) : Ast.located_definition =
     let s = Lexer.consume_with_pos l DEF "Expected 'def' keyword." in
     (* checking if it's a def*, multi-def style function or just an ordinary function *)
@@ -654,20 +666,21 @@ module Parser = struct
               "Expected ':' or ':=' after definition arguments, but got '%s'."
               (Token.show tok) )
     in
-    let body = parse_expr l 0 om in
-    let with_block =
+    let (loc, _) as body = parse_expr l 0 om in
+    let e, with_block =
       match Lexer.current l with
       | _, WITH ->
         Lexer.skip l ~am:1;
-        let rec go l acc =
+        let rec go l acc last_loc =
           match Lexer.current l with
-          | _, DEC | _, DEF -> go l (parse_definition l om :: acc)
-          | _ -> List.rev acc
+          | _, DEC | _, DEF -> 
+            let (loc, _) as d = parse_definition l om in
+            go l (d :: acc) loc 
+          | _ -> last_loc, List.rev acc
         in
-        go l []
-      | _ -> []
+        go l [] loc
+      | _ -> loc, []
     in
-    let e = Lexer.current_pos l in
     Location.combine s e, Ast.Def (hsd, n, args, when_block, body, with_block)
 
   and parse_dec (l : Lexer.t) : Ast.located_definition =
@@ -682,7 +695,7 @@ module Parser = struct
     in
     let n = parse_definition_ident l in
     Lexer.consume l COLON "Expected ':' after 'dec' keyword.";
-    let t = parse_ty l in
+    let t = parse_quantified_ty l in
     let e = Lexer.consume_with_pos l DOT "Expected '.' after function signature." in
     Location.combine s e, Ast.Dec (hsd, n, t)
 
@@ -720,10 +733,10 @@ module Parser = struct
     match Lexer.current l with
     | _, LBRACE ->
       Lexer.skip ~am:1 l;
-      let parse_field lex =
-        let i = parse_ident lex in
+      let parse_field l =
+        let i = parse_ident l in
         Lexer.consume l TILDE "Expected '~' after field name.";
-        let t = parse_ty lex in
+        let t = parse_quantified_ty l in
         i, t
       in
       let fields = Lexer.separated_list l SEMI parse_field in
@@ -733,22 +746,27 @@ module Parser = struct
       Ast.Record fields, e
     | s, PIPE ->
       Lexer.skip ~am:1 l;
-      let parse_variant lex =
-        let i = parse_upper_ident lex in
-        match Lexer.current lex with
+      let parse_variant l =
+        let i = parse_upper_ident l in
+        match Lexer.current l with
         | _, TILDE ->
-          Lexer.skip ~am:1 lex;
-          let t = parse_ty lex in
+          Lexer.skip ~am:1 l;
+          (* probably not the best way to go about it, but idk *)
+          let cons, t = 
+            match parse_quantified_ty l with
+            | Ast.Uni (gs, ty) -> (fun t -> Ast.Uni (gs, t)), ty
+            | Ast.Mono ty -> (fun t -> Ast.Mono t), ty
+          in
           let loc = Location.combine s (Lexer.current_pos l) in
-          i, (loc, Ast.Arrow (t, (loc, Ast.Udt ident)))
+          i, cons (loc, Ast.Arrow (t, (loc, Ast.Udt ident)))
         | _ ->
           let loc = Location.combine s (Lexer.current_pos l) in
-          i, (loc, Ast.Udt ident)
+          i, Ast.Mono (loc, Ast.Udt ident)
       in
       let fields = Lexer.separated_list l PIPE parse_variant in
       Ast.Variant fields, Lexer.current_pos l
     | _ ->
-      let t = Ast.Alias (parse_ty l) in
+      let t = Ast.Alias (parse_quantified_ty l) in
       t, Lexer.current_pos l
   ;;
 
@@ -824,8 +842,8 @@ module Parser = struct
             (Token.show tok) )
   ;;
 
-  let parse_program (l' : Lexer.t) : Ast.program =
-    let om, l = Lexer.gather_user_precs l' in
+  let parse_program (l : Lexer.t) : Ast.program =
+    let om, l = Lexer.gather_user_precs l in
     let mod' = parse_module l in
     let prog = Lexer.list_with_end l (( = ) EOF) (Fun.flip parse_toplvl om) in
     let imports =

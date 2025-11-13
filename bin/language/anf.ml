@@ -26,7 +26,7 @@ module ANF = struct
     | Join of ident * ident option * t * t
     | Jump of ident * value option
 
-  type definition = ident * Ast.ty * t option * t
+  type definition = ident * Ast.quantified_ty * t option * t
   type program = module_name * Ast.ty_decl list * definition list
 
   let pp_value out (v : value) =
@@ -126,8 +126,7 @@ module ANF = struct
       out
       "le@[<v>t %s: %a (%a) =@,%a@]@.in@."
       i
-      Ast.pp_ty
-      (Location.dummy_loc, t)
+      Ast.pp_quant_ty t
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_t)
       wb
       pp_t
@@ -228,7 +227,7 @@ module ANF = struct
     mod_name, decls, defs
 
   and of_typed_definition
-        ((_, (_, i, (_, ty), _, when_block, body)) : Typed_ast.located_definition)
+        ((_, (_, i, ty, _, when_block, body)) : Typed_ast.located_definition)
     : definition
     =
     let when_block = Base.Option.map when_block ~f:(Fun.flip of_typed_expr mk_ret) in

@@ -20,13 +20,6 @@ def ( $ ) f v := f v
 
 dec main : ().
 def main := 
-  if true
-  then ignore 10
-  else {
-    ignore 50;;
-    print "hi";;
-    let [] := ["sup"; "boink"] in
-    let (10, b, @boink) := (20, "burh", @stoink) in
-    ignore (foo $ 10);;
-    ignore (baz & bar & foo $ 10)
-  }
+  ignore (foo $ 10);;
+  ignore (baz & bar & foo $ 10);;
+  print "hello zap"

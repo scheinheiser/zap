@@ -27,10 +27,7 @@ and ty =
   | Tuple of located_ty list
   | Prim of prim
   | Udt of tname (* user defined type *)
-
-type quantified_ty =
-  | Uni of ident list * located_ty (* forall 'g₁ 'g₂ ... 'gₙ. ty *)
-  | Mono of located_ty
+  | Quant of ident list * located_ty (* forall 'g₁ 'g₂ ... 'gₙ. ty *)
 
 type located_const = Location.t * const
 
@@ -82,7 +79,7 @@ and expr =
   | ETup of located_expr list
   | Let of
       located_pattern
-      * quantified_ty option
+      * located_ty option
       * located_expr
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e1 in e2 *)
   | Grouping of located_expr
@@ -101,14 +98,14 @@ type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
 and tdecl_type =
-  | Alias of quantified_ty
-  | Variant of (ident * quantified_ty) list
-  | Record of (ident * quantified_ty) list
+  | Alias of located_ty
+  | Variant of (ident * located_ty) list
+  | Record of (ident * located_ty) list
 
 type located_definition = Location.t * definition
 
 and definition =
-  | Dec of bool * func * quantified_ty
+  | Dec of bool * func * located_ty
   | Def of
       bool * func * located_pattern list * located_expr option * located_expr * with_block
 (* identifer, args, optional when-block, body, optional with-block *)
@@ -144,11 +141,25 @@ let rec show_ty = function
     Printf.sprintf "(%s)" (String.concat ", " ts)
   | Prim p -> show_prim p
   | Udt t -> t
+  | Quant (gs, (_, ty)) -> Printf.sprintf "forall %s. %s" (String.concat " " gs) (show_ty ty)
 ;;
 
-let get_quantified_ty = function
-  | Uni (_, ty) -> ty
-  | Mono ty -> ty
+let rec show_pat = function
+  | _, PWild -> "_"
+  | _, PCons (l, r) -> Printf.sprintf "%s :: %s" (show_pat l) (show_pat r)
+  | _, PCtor (n, p) -> Printf.sprintf "%s %s" n (show_pat p)
+  | _, PList ls -> Printf.sprintf "[ %s ]" (List.map show_pat ls |> String.concat "; ")
+  | _, PTup ts -> Printf.sprintf "( %s )" (List.map show_pat ts |> String.concat ", ")
+  | _, PConst (_, c) ->
+    (match c with
+     | Ident i -> i
+     | Int i -> string_of_int i
+     | Float f -> string_of_float f
+     | Char c -> Char.escaped c
+     | String s -> s
+     | Bool b -> string_of_bool b
+     | Atom a -> a
+     | Unit -> "()")
 ;;
 
 (* Pretty printing *)
@@ -181,13 +192,8 @@ let rec pp_ty out ((_, ty) : located_ty) =
       ts
   | Prim p -> pp_prim out p
   | Udt t -> pp_ident out t
+  | Quant (gs, ty) -> Format.fprintf out "forall %s. %a" (String.concat " " gs) pp_ty ty
 ;;
-
-let pp_quant_ty out (qty : quantified_ty) =
-  match qty with
-  | Mono ty -> pp_ty out ty
-  | Uni (gs, ty) ->
-    Format.fprintf out "forall %s. %a" (String.concat " " gs) pp_ty ty
 
 let pp_const out ((_, c) : located_const) =
   match c with
@@ -270,7 +276,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       "@[<v>(@[<hov>%a@ %a@ %a@])@,%a@]"
       pp_pattern
       p
-      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_quant_ty)
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_ty)
       ty
       pp_expr
       v
@@ -353,11 +359,11 @@ let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   | _ -> Format.fprintf out "(ty@[<v>pe %s@,%a@])" i pp_tdecl_type t
 
 and pp_tdecl_type out (t : tdecl_type) =
-  let pp_field out ((i, t) : ident * quantified_ty) =
-    Format.fprintf out "(%s %a)" i pp_quant_ty t
+  let pp_field out ((i, t) : ident * located_ty) =
+    Format.fprintf out "(%s %a)" i pp_ty t
   in
   match t with
-  | Alias t -> pp_quant_ty out t
+  | Alias t -> pp_ty out t
   | Record r ->
     Format.fprintf
       out
@@ -385,7 +391,7 @@ let pp_when_block out (when_block : located_expr option) =
 
 let rec pp_definition out ((_, def) : located_definition) =
   match def with
-  | Dec (_, f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_quant_ty ts
+  | Dec (_, f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_ty ts
   | Def (_, f, args, when_block, body, with_block) ->
     Format.fprintf
       out

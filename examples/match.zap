@@ -9,7 +9,7 @@ dec isNat : int -> bool.
 def isNat n :=
   match n to
   | _;
-    print "LOG: natural number detected.";;
+    print "LOG: natural number detected.";
     true
   | _; false
 

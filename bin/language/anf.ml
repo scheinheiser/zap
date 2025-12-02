@@ -26,7 +26,7 @@ module ANF = struct
     | Join of ident * ident option * t * t
     | Jump of ident * value option
 
-  type definition = ident * Ast.quantified_ty * t option * t
+  type definition = ident * Ast.located_ty * t option * t
   type program = module_name * Ast.ty_decl list * definition list
 
   let pp_value out (v : value) =
@@ -126,7 +126,8 @@ module ANF = struct
       out
       "le@[<v>t %s: %a (%a) =@,%a@]@.in@."
       i
-      Ast.pp_quant_ty t
+      Ast.pp_ty
+      t
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_t)
       wb
       pp_t

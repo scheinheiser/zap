@@ -44,11 +44,11 @@ let builtin_defs loc =
     ["+"; "-"; "*"; "/"], Mono (loc, Arrow ((loc, Prim PInt), (loc, Arrow ((loc, Prim PInt), (loc, Prim PInt)))))
   ; (* dec ( +. | -. | *. | /. ) : float -> float -> float. *)
     ["+."; "-."; "*."; "/."], Mono (loc, Arrow ((loc, Prim PFloat), (loc, Arrow ((loc, Prim PFloat), (loc, Prim PFloat)))))
-  ; (* dec ( < | > | <= | >= | = | /= ) : Uni 'a. 'a -> 'a -> bool. *)
+  ; (* dec ( < | > | <= | >= | = | /= ) : forall 'a. 'a -> 'a -> bool. *)
     ["<"; ">"; "<="; ">="; "="; "/="], Uni (["'a"], (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Prim PBool))))))
   ; (* dec ( && | || ) : bool -> bool -> bool. *)
     ["&&"; "||"], Mono (loc, Arrow ((loc, Prim PBool), (loc, Arrow ((loc, Prim PBool), (loc, Prim PBool)))))
-  ; (* dec ( :: ) : Uni 'a. 'a -> 'a list -> 'a list. *)
+  ; (* dec ( :: ) : forall 'a. 'a -> 'a list -> 'a list. *)
     ["::"], Uni (["'a"], (loc, Arrow ((loc, Prim (PGeneric "'a")), (loc, Arrow ((loc, List (loc, Prim (PGeneric "'a"))), (loc, List (loc, Prim (PGeneric "'a"))))))))
   ] [@@ocamlformat "disable"]
 
@@ -109,7 +109,9 @@ let init_type_env (env : env) (types : Ast.located_ty_decl list) : env =
   in
   { env with alias_env = alias; record_env = record; variant_env = variant; tyvar_env = TM.empty} [@@ocamlformat "disable"]
 
-let get_value_type (value_env : 'a base_type_map) (i : string) : 'a option =
+let get_value_type (value_env : 'a base_type_map) (i : string) : 'a = TM.find i value_env
+
+let get_value_type_opt (value_env : 'a base_type_map) (i : string) : 'a option =
   TM.find_opt i value_env
 ;;
 
@@ -129,6 +131,23 @@ let make_err (e : Error.t) : 'a Base.Or_error.t =
   Base.Or_error.error_string @@ Error.format_err e
 ;;
 
+let rec check_type (env : env) ((loc, t) : Ast.located_ty) : unit Base.Or_error.t =
+  let open Base.Or_error in
+  match t with
+  | Udt u
+    when (not @@ value_exists env.alias_env u)
+         && (not @@ value_exists env.record_env u)
+         && (not @@ value_exists env.variant_env u) ->
+    make_err (Some loc, Printf.sprintf "Undefined type %s." u)
+  | Arrow (l, r) ->
+    let* _ = check_type env l in
+    check_type env r
+  | List l -> check_type env l
+  | Tuple t -> find_map_ok t ~f:(fun t' -> check_type env t')
+  | Ctor (_, t') -> check_type env t'
+  | _ -> Ok ()
+;;
+
 let rec unify
           (env : env)
           ~(location : Location.t)
@@ -139,12 +158,18 @@ let rec unify
   let open Ast in
   let open Base.Or_error in
   let ((loc, _) as l) = expect in
+  (*TODO: check the type here*)
   let _, l = sub_ty env l in
   let _, r = sub_ty env r in
   match l, r with
   | Prim (PGeneric l), r -> bind_ty env l (loc', r)
   | l, Prim (PGeneric r) -> bind_ty env r (loc, l)
-  | Udt ln, Udt rn when ln = rn -> Ok env
+  | Udt ln, Udt rn when ln = rn ->
+    let* _ = check_type env (location, l) in
+    let* _ = check_type env (location, r) in
+    let l = get_value_type env.alias_env ln |> get_quantified_ty in
+    let r = get_value_type env.alias_env rn |> get_quantified_ty in
+    unify env ~location ~expect:l r
   | Prim l, Prim r when l = r -> Ok env
   | Ctor (ln, l), Ctor (rn, r) when ln = rn -> unify env ~location ~expect:l r
   | List l, List r -> unify env ~location ~expect:l r
@@ -178,59 +203,54 @@ and sub_ty (env : env) ((p, t) : Ast.located_ty) : Ast.located_ty =
   let open Ast in
   match t with
   | Prim (PGeneric g) ->
-    (match get_value_type env.tyvar_env g with
+    (match get_value_type_opt env.tyvar_env g with
      | None -> p, t
-     | Some ty -> instantiate ty |> sub_ty env)
+     | Some ty -> get_quantified_ty ty )
   | List ty -> p, List (sub_ty env ty)
   | Tuple ts -> p, Tuple (List.map (fun t -> sub_ty env t) ts)
   | Arrow (l, r) -> p, Arrow (sub_ty env l, sub_ty env r)
   | Ctor (n, t) -> p, Ctor (n, sub_ty env t)
   | t -> p, t
 
-and bind_ty (env : env) (n : string) ((p, t) : Ast.located_ty) : env Base.Or_error.t =
+and bind_ty (env : env) (n : string) ((p, d) as t : Ast.located_ty) : env Base.Or_error.t =
   let open Ast in
-  let is_internal = String.starts_with ~prefix:"t_" in
   let rec occurs_within = function
     | _, Prim (PGeneric g) -> g = n (* we already know `n` is a tyvar *)
     | _, List t | _, Ctor (_, t) -> occurs_within t
-    | _, Tuple ts -> List.fold_right (fun t acc -> occurs_within t || acc) ts false
+    | _, Tuple ts -> List.exists occurs_within ts
     | _, Arrow (l, r) -> occurs_within l || occurs_within r
     | _ -> false
   in
   match t with
-  | Prim (PGeneric g) when g = n -> Ok env
-  | _ when occurs_within (p, t) && is_internal n ->
+  | _, Prim (PGeneric g) when g = n -> Ok env
+  | _ when occurs_within t ->
     make_err (Some p, Printf.sprintf "Found infinite type: %s." n)
-  | _ -> Ok { env with tyvar_env = add_value_type env.tyvar_env n (Mono (p, t)) }
+  | _ -> 
+    Printf.printf "bound %s to %s\n" n (show_ty d);
+    Ok { env with tyvar_env = add_value_type env.tyvar_env n (Mono t) }
 
 and instantiate (t : Ast.quantified_ty) : Ast.located_ty =
   let open Ast in
-  let is_internal = String.starts_with ~prefix:"t_" in
-  let (env : string TM.t) =
+  let env =
     (match t with
-    | Mono _ -> []
-    | Uni (gs, _) -> 
-      List.map (fun i -> i, fresh_tyvar ()) gs)
+     | Mono _ -> []
+     | Uni (gs, _) -> List.map (fun i -> i, fresh_tyvar ()) gs)
     |> TM.of_list
   in
   let rec go env = function
-    | (p, Prim (PGeneric g)) ->
+    | p, Prim (PGeneric g) ->
       (match TM.find_opt g env with
-      | Some g' -> (p, Prim (PGeneric g')), env
-      | None ->
-        let g' =
-          if is_internal g
-          then g
-          else fresh_tyvar ()
-        in
-        let env = TM.add g g' env in
-        (p, Prim (PGeneric g')), env)
+       | Some g' -> (p, Prim (PGeneric g')), env
+       | None ->
+         let g' = fresh_tyvar () in
+         let env = TM.add g g' env in
+         (p, Prim (PGeneric g')), env)
     | p, List t ->
       let t, env = go env t in
       (p, List t), env
     | p, Ctor (n, t) ->
       let t, env = go env t in
-     (p, Ctor (n, t)), env
+      (p, Ctor (n, t)), env
     | p, Tuple ts ->
       let rec aux acc e = function
         | [] -> List.rev acc, e
@@ -248,7 +268,7 @@ and instantiate (t : Ast.quantified_ty) : Ast.located_ty =
   in
   fst @@ go env (get_quantified_ty t)
 
-and generalise (env: env) (ty: Ast.located_ty) : Ast.quantified_ty =
+and generalise (env : env) (ty : Ast.located_ty) : Ast.quantified_ty =
   let open Ast in
   let module S = Set.Make (String) in
   let rec collect_tyvars acc = function
@@ -264,14 +284,17 @@ and generalise (env: env) (ty: Ast.located_ty) : Ast.quantified_ty =
         | h :: t ->
           let acc = collect_tyvars acc h in
           go acc t
-      in go acc ts
+      in
+      go acc ts
     | _, Prim (PGeneric g) -> S.add g acc
     | _ -> acc
   in
   let vars = sub_ty env ty |> collect_tyvars S.empty in
   match S.to_list vars with
   | [] -> Mono ty
-  | vars -> Uni (vars, ty)
+  | vars -> 
+    Printf.printf "generalised: %s\n" (String.concat ", " vars);
+    Uni (vars, ty)
 ;;
 
 let check_list
@@ -333,23 +356,6 @@ let get_const_type ((loc, c) : Ast.located_const) : Ast.located_ty =
   loc, t
 ;;
 
-let rec check_type (env : env) ((loc, t) : Ast.located_ty) : unit Base.Or_error.t =
-  let open Base.Or_error in
-  match t with
-  | Udt u
-    when (not @@ value_exists env.alias_env u)
-         && (not @@ value_exists env.record_env u)
-         && (not @@ value_exists env.variant_env u) ->
-    make_err (Some loc, Printf.sprintf "Undefined type %s." u)
-  | Arrow (l, r) ->
-    let* _ = check_type env l in
-    check_type env r
-  | List l -> check_type env l
-  | Tuple t -> find_map_ok t ~f:(fun t' -> check_type env t')
-  | Ctor (_, t') -> check_type env t'
-  | _ -> Ok ()
-;;
-
 let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
   : (Ast.located_ty * env) Base.Or_error.t
   =
@@ -365,8 +371,8 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
   | PList l ->
     (match l with
      | [] ->
-        let t = loc, Prim (PGeneric (fresh_tyvar ())) in
-        Ok ((loc, List t), env)
+       let t = loc, Prim (PGeneric (fresh_tyvar ())) in
+       Ok ((loc, List t), env)
      | items ->
        let ty_list, env' = check_list ~f:get_pattern_type ~rev:true env items in
        let* l' = combine_errors ty_list in
@@ -378,7 +384,7 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
            l'
        in
        (match non_generic with
-        | None -> 
+        | None ->
           let t = loc, Prim (PGeneric (fresh_tyvar ())) in
           Ok ((loc, List t), env')
         | Some ((type_loc, _) as t) ->
@@ -416,14 +422,14 @@ let rec get_pattern_type (env : env) ((loc, pat) : Ast.located_pattern)
       match l with
       | [] -> make_err (Some loc, Printf.sprintf "Undefined constructor - %s." i)
       | (_, vs) :: rest ->
-        (match get_value_type vs i with
-        | None -> aux rest
-        | Some t -> 
-          let t = instantiate t |> sub_ty env |> flatten_arrow in
-          (*NOTE: this'll likely cause issues with variants that contain function signatures.*)
-          let@ env = unify env ~location:loc ~expect:(List.hd t) v in
-          (* we can safely use the _exn version as every constructor will return the overarching type *)
-          Base.List.last_exn t, env)
+        (match get_value_type_opt vs i with
+         | None -> aux rest
+         | Some t ->
+           let t = instantiate t |> sub_ty env |> flatten_arrow in
+           (*NOTE: this'll likely cause issues with variants that contain function signatures.*)
+           let@ env = unify env ~location:loc ~expect:(List.hd t) v in
+           (* we can safely use the _exn version as every constructor will return the overarching type *)
+           Base.List.last_exn t, env)
     in
     aux @@ TM.to_list env.variant_env
 ;;
@@ -451,7 +457,13 @@ and sub_expr (env : env) ((t, (p, e)) : Typed_ast.typed_expr) : Typed_ast.typed_
   | Lam (ps, v) -> t, (p, Lam (ps, sub_expr env v))
   | Match (e, bs) ->
     let e = sub_expr env e in
-    let bs = List.map (fun (p, wb, e) -> let wb = Base.Option.map wb ~f:(sub_expr env) in p, wb, sub_expr env e) bs in
+    let bs =
+      List.map
+        (fun (p, wb, e) ->
+           let wb = Base.Option.map wb ~f:(sub_expr env) in
+           p, wb, sub_expr env e)
+        bs
+    in
     t, (p, Match (e, bs))
 
 and check_expr' (env : env) ((loc, e) : Ast.located_expr)
@@ -484,17 +496,17 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
        let@ _ = combine_errors wts in
        ((ty_loc, List t), (loc, Typed_ast.EList exprs)), env)
   | Const (s, Ident i) ->
-    (match get_value_type env.var_env i with
+    (match get_value_type_opt env.var_env i with
      | None ->
-       (match get_value_type env.func_env i with
+       (match get_value_type_opt env.func_env i with
        | None ->
          let rec aux l =
            match l with
            | [] -> make_err (Some loc, Printf.sprintf "Undefined identifier - %s." i)
            | (_, vs) :: rest ->
-             (match get_value_type vs i with
+             (match get_value_type_opt vs i with
               | None -> aux rest
-              | Some t -> Ok ((instantiate t |> sub_ty env, (loc, Typed_ast.Const (s, Ident i))), env))
+              | Some t -> Ok ((sub_ty env (get_quantified_ty t), (loc, Typed_ast.Const (s, Ident i))), env))
          in
          aux @@ TM.to_list env.variant_env
       | Some t -> 
@@ -565,7 +577,7 @@ and check_expr' (env : env) ((loc, e) : Ast.located_expr)
                 "Expected an empty list or a list type, but got %s."
                 (show_ty err_type) ))
      | User_op i ->
-       (match get_value_type env.func_env i with
+       (match get_value_type_opt env.func_env i with
         | None -> make_err (Some loc, Printf.sprintf "Undefined operator - %s." i)
         | Some fsig ->
           let (_, esig) as fsig = instantiate fsig in
@@ -677,7 +689,7 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
   =
   let open Ast in
   let open Base.Or_error in
-  let func_type = get_value_type env.func_env i in
+  let func_type = get_value_type_opt env.func_env i in
   let* with_block', e =
     match with_block with
     | [] -> Ok ([], env)
@@ -704,21 +716,30 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
     match func_type with
     | Some dec_ty ->
       let dec_ty = instantiate dec_ty in
-      Printf.printf "%s dec_ty: %s\n" i (snd dec_ty |> show_ty);
       let t = flatten_arrow dec_ty |> drop_last in
       (match () with
-      (* kinda hacky, but whatever *)
-      | _ when List.length t < List.length args -> ([make_err (Some loc, Printf.sprintf "The function %s expects %i arguments, but %i arguments were found." i (List.length t) (List.length args))], env), []
-      | _ -> 
-        let unify_arg env sig_ty pat =
-          let* pat_ty, env = get_pattern_type env pat in
-          let@ env = unify env ~location:loc ~expect:sig_ty pat_ty in
-          sig_ty, env
-        in
-        let n = List.length args in
-        (* we compare our given pattern types to any given types. any excess is carried on - η-reduction *)
-        let t, ret = List.take n t, List.drop n t in
-        check_list2 ~f:unify_arg ~rev:false e t args, ret)
+       (* kinda hacky, but whatever *)
+       | _ when List.length t < List.length args ->
+         ( ( [ make_err
+                 ( Some loc
+                 , Printf.sprintf
+                     "The function %s expects %i arguments, but %i arguments were found."
+                     i
+                     (List.length t)
+                     (List.length args) )
+             ]
+           , env )
+         , [] )
+       | _ ->
+         let unify_arg env sig_ty pat =
+           let* pat_ty, env = get_pattern_type env pat in
+           let@ env = unify env ~location:loc ~expect:sig_ty pat_ty in
+           sig_ty, env
+         in
+         let n = List.length args in
+         (* we compare our given pattern types to any given types. any excess is carried on - η-reduction *)
+         let t, ret = List.take n t, List.drop n t in
+         check_list2 ~f:unify_arg ~rev:false e t args, ret)
     | None ->
       Error.report_warning
         ( Some loc
@@ -756,9 +777,12 @@ let rec check_def (env : env) (loc, (hsd, i, args, when_block, body, with_block)
     let d = loc, (hsd, i, ret, args, wb, body) in
     Ok (d :: with_block', env)
   | Some dec_ty ->
-    let dec_ty = instantiate dec_ty in
+    let dec_ty = get_quantified_ty dec_ty in
+    Printf.printf "%s:\n  before unification: %s\n" i (sub_ty env dec_ty |> snd |> show_ty);
     let@ env = unify env ~location:loc ~expect:dec_ty ret in
-    let d = loc, (hsd, i, (generalise env dec_ty), args, wb, body) in
+    Printf.printf "  after unification: %s\n\n" (sub_ty env dec_ty |> snd |> show_ty);
+    let dec_ty = sub_ty env dec_ty in
+    let d = loc, (hsd, i, generalise env dec_ty, args, wb, body) in
     d :: with_block', env
 ;;
 
@@ -784,7 +808,14 @@ let check_program
           Some (loc, (hsd, i, args, when_block, body, with_block)))
       defs
   in
-  let* _ = List.map (fun (_, t) -> match t with | Ast.Uni (_, t) | Ast.Mono t -> check_type env t) decs |> combine_errors in
+  let* _ =
+    List.map
+      (fun (_, t) ->
+         match t with
+         | Ast.Uni (_, t) | Ast.Mono t -> check_type env t)
+      decs
+    |> combine_errors
+  in
   let mains =
     List.filter_map
       (function
@@ -799,6 +830,16 @@ let check_program
     | _ when chk_main -> make_err (None, "Multiple entrypoints found.")
     | _ -> Ok ()
   in
-  let@ typed_defs = check_list ~f:check_def ~rev:true env defs |> fst |> combine_errors in
+  let@ typed_defs = 
+    let rec go e acc = function
+      | [] -> List.rev acc |> combine_errors
+      | h :: t ->
+        (match check_def e h with
+        | Ok (d, e) -> 
+            let e = {e with tyvar_env = TM.empty; var_env = TM.empty} in
+            go e (Ok d :: acc) t
+        | Error _ as err -> go e (err :: acc) t)
+    in go env [] defs
+  in
   n, imp, typs, List.flatten typed_defs
 ;;

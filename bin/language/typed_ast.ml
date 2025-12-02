@@ -24,7 +24,12 @@ and expr =
 type located_definition = Location.t * definition
 
 and definition =
-  bool * func * Ast.quantified_ty * Ast.located_pattern list * typed_expr option * typed_expr
+  bool
+  * func
+  * Ast.located_ty
+  * Ast.located_pattern list
+  * typed_expr option
+  * typed_expr
 
 type program =
   module_name
@@ -134,7 +139,7 @@ let pp_typed_definition
     out
     "(de@[<v>f %s (%a)@,(%a)@,%a@,%a@])"
     f
-    Ast.pp_quant_ty
+    Ast.pp_ty
     ret
     Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_pattern)
     args

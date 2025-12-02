@@ -14,34 +14,24 @@ type myRecord :=
   ; variantField ~ myVariant
   }
 
-% Variant1 {100}
-% myRecord {field1 = 10; field2 = "hi"; aliasField = 100; variantField = Variant2 "hi"}
-
-dec show : int -> string.
-dec length : string -> int.
-
 dec ignore : 'a -> ().
 def ignore _ := ()
-
-% let-binding function
-dec lamTest : int -> bool.
-def lamTest num :=
-  let test_lambda : int -> string = fun n => show n in
-  ignore (Cons 10);;
-  ignore (length (test_lambda num) > 10);;
-  (test_lambda num) = "hi"
 
 dec caller : ('a -> 'b) -> 'a -> 'b.
 def caller f v := f v
 
-def failingUnification n :=
-  ignore (n + 1);;
-  ignore (n + 2);;
-  ignore ((n = 4) || (n = 10));;
-  n
-
 def patTest (5, false, "hi") (10 :: rest) five :=
   print five
+
+% def testing := fun f => fun x => f (x + 1)
+
+% this should be demoted to an int -> int function.
+dec besting : 'a -> int.
+def besting n := n + 1
+
+% this should cause an error due to the assumption that 'a is completely general.
+dec besting : forall 'a. 'a -> int.
+def besting n := n + 1
 
 dec main : ().
 def main := 

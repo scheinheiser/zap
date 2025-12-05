@@ -32,12 +32,12 @@
     ("lassoc", LASSOC);
     ("module", MODULE);
     ("import", IMPORT);
-    ("int", TY_PRIM Ast.PInt);
-    ("float", TY_PRIM Ast.PFloat);
-    ("char", TY_PRIM Ast.PChar);
-    ("string", TY_PRIM Ast.PString);
-    ("bool", TY_PRIM Ast.PBool);
-    ("atom", TY_PRIM Ast.PAtom);
+    ("Int", TY_INT);
+    ("Float", TY_FLOAT);
+    ("Char", TY_CHAR);
+    ("String", TY_STRING);
+    ("Bool", TY_BOOL);
+    ("Atom", TY_ATOM);
     ("with", WITH);
     ("without", WITHOUT);
     ("true", BOOL true);
@@ -48,6 +48,8 @@
     ("dec", DEC);
     ("def", DEF);
     ("type", TYPE);
+    ("universe", UNIVERSE);
+    ("Type", TTYPE);
     ("forall", FORALL);
     ("fun", FUN);
     ("op", KOP);
@@ -98,7 +100,7 @@ rule token = parse
   | float as f  {with_pos lexbuf (FLOAT (float_of_string f))}
   | '{'         {with_pos lexbuf LBRACE}
   | '}'         {with_pos lexbuf RBRACE}
-  | "()"        {with_pos lexbuf (TY_PRIM Ast.PUnit)}
+  | "()"        {with_pos lexbuf TY_UNIT}
   | '('         {with_pos lexbuf LPAREN}
   | ')'         {with_pos lexbuf RPAREN}
   | '['         {with_pos lexbuf LBRACK}
@@ -123,7 +125,6 @@ rule token = parse
   | ident as i
     {let tok = match (List.assoc_opt i keywords) with
                 | (Some t)               -> t
-                | None when is_generic i -> TY_PRIM (Ast.PGeneric i)
                 | None when is_upper i   -> UPPER_IDENT i
                 | None                   -> IDENT i
       in with_pos lexbuf tok}

@@ -16,7 +16,8 @@ type prim =
   | PBool
   | PAtom
   | PUnit
-  | PGeneric of string
+  | PUdt of string
+  | PType of int (* A : Type u *)
 
 type located_ty = Location.t * ty
 
@@ -71,21 +72,22 @@ and pattern =
 type located_expr = Location.t * expr
 
 and expr =
-  | Const of located_const
-  | EList of located_expr list
+  | List of located_expr list
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
-  | ETup of located_expr list
+  (* | ETup of located_expr list (* up for removal/definition within the language itself *) *)
   | Let of
       located_pattern
-      * located_ty option
+      * located_expr option
       * located_expr
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e1 in e2 *)
-  | Grouping of located_expr
   | Match of located_expr * (located_pattern * located_expr option * located_expr) list
   | If of located_expr * located_expr * located_expr option
   | Lam of located_pattern list * located_expr
+  | Const of located_const
+  | TypeLit of ident option * prim * located_expr list (* (x : T a₁ ... aₙ) | T a₁ ... aₙ *)
+  | Pi of located_expr * located_expr
 
 type import_cond =
   | CWith of ident list
@@ -99,13 +101,13 @@ and ty_decl = ident * tdecl_type
 
 and tdecl_type =
   | Alias of located_ty
-  | Variant of (ident * located_ty) list
-  | Record of (ident * located_ty) list
+  | Variant of (ident * located_expr) list
+  | Record of (ident * located_expr) list
 
 type located_definition = Location.t * definition
 
 and definition =
-  | Dec of bool * func * located_ty
+  | Dec of bool * func * located_expr
   | Def of
       bool * func * located_pattern list * located_expr option * located_expr * with_block
 (* identifer, args, optional when-block, body, optional with-block *)
@@ -122,14 +124,15 @@ type program =
 
 (* utils *)
 let show_prim = function
-  | PInt -> "int"
-  | PFloat -> "float"
-  | PString -> "string"
-  | PChar -> "char"
-  | PBool -> "bool"
-  | PAtom -> "atom"
-  | PUnit -> "unit"
-  | PGeneric g -> g
+  | PInt -> "Int"
+  | PFloat -> "Float"
+  | PString -> "String"
+  | PChar -> "Char"
+  | PBool -> "Bool"
+  | PAtom -> "Atom"
+  | PUnit -> "Unit"
+  | PUdt u -> u
+  | PType ix -> Printf.sprintf "Type %i" ix
 ;;
 
 let rec show_ty = function
@@ -166,17 +169,7 @@ let rec show_pat = function
 let pp_ident out (i : ident) = Format.fprintf out "%s" i
 
 let pp_prim out (t : prim) =
-  let of_prim = function
-    | PInt -> "int"
-    | PFloat -> "float"
-    | PString -> "string"
-    | PChar -> "char"
-    | PBool -> "bool"
-    | PAtom -> "atom"
-    | PUnit -> "unit"
-    | PGeneric n -> n
-  in
-  Format.fprintf out "%s" (of_prim t)
+  Format.fprintf out "%s" (show_prim t)
 ;;
 
 let rec pp_ty out ((_, ty) : located_ty) =
@@ -255,13 +248,13 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
-  | ETup t ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr)
-      t
-  | EList l ->
+  (* | ETup t -> *)
+  (*   Format.fprintf *)
+  (*     out *)
+  (*     "(@[<hov>%a@])" *)
+  (*     Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr) *)
+  (*     t *)
+  | List l ->
     Format.fprintf
       out
       "[@[<hov>%a@]]"
@@ -276,13 +269,12 @@ let rec pp_expr out ((_, e) : located_expr) =
       "@[<v>(@[<hov>%a@ %a@ %a@])@,%a@]"
       pp_pattern
       p
-      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_ty)
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
       ty
       pp_expr
       v
       pp_expr
       n
-  | Grouping body -> Format.fprintf out "(@[<v>%a@])" pp_expr body
   | If (cond, tbranch, fbranch) ->
     Format.fprintf
       out
@@ -320,6 +312,10 @@ let rec pp_expr out ((_, e) : located_expr) =
       cond
       Format.(pp_print_list ~pp_sep:pp_print_cut pp_branch)
       bs
+  | Pi (l, r) -> Format.fprintf out"(%a -> %a)" pp_expr l pp_expr r
+  | TypeLit (i, p, cs) ->
+    let i = match i with Some i -> Printf.sprintf "%s : " i | None -> "" in
+    Format.fprintf out "(%s%a %a)" i pp_prim p Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_expr) cs
 ;;
 
 let pp_import_cond out (cond : import_cond) =
@@ -359,8 +355,8 @@ let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   | _ -> Format.fprintf out "(ty@[<v>pe %s@,%a@])" i pp_tdecl_type t
 
 and pp_tdecl_type out (t : tdecl_type) =
-  let pp_field out ((i, t) : ident * located_ty) =
-    Format.fprintf out "(%s %a)" i pp_ty t
+  let pp_field out ((i, t) : ident * located_expr) =
+    Format.fprintf out "(%s %a)" i pp_expr t
   in
   match t with
   | Alias t -> pp_ty out t
@@ -391,7 +387,7 @@ let pp_when_block out (when_block : located_expr option) =
 
 let rec pp_definition out ((_, def) : located_definition) =
   match def with
-  | Dec (_, f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_ty ts
+  | Dec (_, f, ts) -> Format.fprintf out "(dec %s @[<hov>%a@])" f pp_expr ts
   | Def (_, f, args, when_block, body, with_block) ->
     Format.fprintf
       out

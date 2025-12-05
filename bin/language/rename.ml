@@ -110,12 +110,9 @@ end = struct
        | Some (i', _) -> (loc, Const (s, Ident i')), env
        | None -> (loc, Const (s, Ident i)), env)
     | Const _ -> (loc, expr), env
-    | EList items ->
+    | List items ->
       let items', env' = rename_list ~f:rename_expr env items in
-      (loc, EList items'), env'
-    | ETup items ->
-      let items', env' = rename_list ~f:rename_expr env items in
-      (loc, ETup items'), env'
+      (loc, List items'), env'
     | Bop (l, op, r) ->
       let l', env' = rename_expr env l in
       let r', env'' = rename_expr env' r in
@@ -148,6 +145,11 @@ end = struct
       in
       (*TODO: shadow warning? *)
       let p, env = rename_pattern env p in
+      let t = 
+        match t with
+        | Some t -> Some (fst @@ rename_expr env t)
+        | None -> None
+      in
       let expr, _ = rename_expr env expr in
       let env =
         let idents =
@@ -161,9 +163,6 @@ end = struct
       in
       let n, env = rename_expr env n in
       (loc, Let (p, t, expr, n)), env
-    | Grouping g ->
-      let g, _ = rename_expr env g in
-      (loc, Grouping g), env
     | If (e, t, f) ->
       let e, env = rename_expr env e in
       let t, env = rename_expr env t in
@@ -191,6 +190,29 @@ end = struct
           bs
       in
       (loc, Match (e, bs)), env
+    | TypeLit (i, p, cs) ->
+      let i, env =
+        match i with
+        | None -> None, env
+        | Some i ->
+          let i' = fresh_alpha i in
+          let env = VM.add i (i', false) env in
+          Some i', env
+      in
+      let p = 
+        match p with
+        | PUdt u ->
+          (match VM.find_opt u env with
+          | Some (u, _) -> PUdt u
+          | None -> p)
+        | _ -> p
+      in
+      let cs, env = rename_list ~f:rename_expr env cs in
+      (loc, TypeLit (i, p, cs)), env
+    | Pi (l, r) ->
+      let l, env' = rename_expr env l in
+      let r, _ = rename_expr env' r in
+      (loc, Pi (l, r)), env
   ;;
 
   let rec rename_definition
@@ -209,6 +231,7 @@ end = struct
           let env' = VM.add i (i', hsd) env in
           i', env')
       in
+      let sig', _ = rename_expr env sig' in
       (loc, Dec (hsd, i, sig')), env
     | Def (hsd, i, args, when_block, body, with_block) ->
       let i, env =

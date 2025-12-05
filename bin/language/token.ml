@@ -3,13 +3,14 @@ open Util
 type t = Location.t * token
 
 and token =
-  | INT of int
-  | FLOAT of float
-  | STRING of string
-  | CHAR of char
-  | BOOL of bool
-  | UNIT
-  | TY_PRIM of Ast.prim
+  | INT of int        | TY_INT
+  | FLOAT of float    | TY_FLOAT
+  | STRING of string  | TY_STRING
+  | CHAR of char      | TY_CHAR
+  | BOOL of bool      | TY_BOOL
+  | UNIT              | TY_UNIT
+  | TY_ATOM
+  (* | TY_PRIM of Ast.prim *)
   | IDENT of string
   | UPPER_IDENT of string
   | OP of string
@@ -34,6 +35,8 @@ and token =
   | IN
   | MODULE
   | IMPORT
+  | UNIVERSE
+  | TTYPE
   | AND
   | OR
   | LT
@@ -71,27 +74,16 @@ and token =
   | WILDCARD
   | EOF
 
-let show_prim = function
-  | Ast.PInt -> "int"
-  | Ast.PFloat -> "float"
-  | Ast.PString -> "string"
-  | Ast.PChar -> "char"
-  | Ast.PBool -> "bool"
-  | Ast.PAtom -> "atom"
-  | Ast.PUnit -> "()"
-  | Ast.PGeneric n -> n
-;;
-
 let show (t : token) : string =
   let open Printf in
   match t with
-  | INT i -> sprintf "INT %d" i
-  | FLOAT f -> sprintf "FLOAT %.5f" f
-  | STRING s -> sprintf "STRING \"%s\"" s
-  | CHAR c -> sprintf "CHAR %c" c
-  | BOOL b -> sprintf "BOOL %b" b
-  | UNIT -> "UNIT"
-  | TY_PRIM t -> sprintf "TY_PRIM %s" (show_prim t)
+  | INT i -> sprintf "INT %d" i             | TY_INT -> sprintf "TY_INT"
+  | FLOAT f -> sprintf "FLOAT %.5f" f       | TY_FLOAT -> sprintf "TY_FLOAT"
+  | STRING s -> sprintf "STRING \"%s\"" s   | TY_STRING -> sprintf "TY_STRING"
+  | CHAR c -> sprintf "CHAR %c" c           | TY_CHAR -> sprintf "TY_CHAR"
+  | BOOL b -> sprintf "BOOL %b" b           | TY_BOOL -> sprintf "TY_BOOL"
+  | UNIT -> "UNIT"                          | TY_UNIT -> "TY_UNIT"
+  | TY_ATOM -> "TY_ATOM"
   | IDENT i -> sprintf "IDENT %s" i
   | UPPER_IDENT i -> sprintf "UPPER_IDENT %s" i
   | OP o -> sprintf "OP %s" o
@@ -116,6 +108,8 @@ let show (t : token) : string =
   | IN -> "IN"
   | MODULE -> "MODULE"
   | IMPORT -> "IMPORT"
+  | UNIVERSE -> "UNIVERSE"
+  | TTYPE -> "TTYPE"
   | AND -> "AND"
   | OR -> "OR"
   | LT -> "LT"
@@ -152,7 +146,7 @@ let show (t : token) : string =
   | BTICK -> "BTICK"
   | WILDCARD -> "WILDCARD"
   | EOF -> "EOF"
-;;
+[@@ocamlformat "disable"]
 
 let is_op (t : token) : bool =
   match t with

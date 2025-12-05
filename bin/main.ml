@@ -9,7 +9,7 @@ let border () =
 ;;
 
 let () =
-  let input = In_channel.(open_text "examples/quantification.zap" |> input_all) in
+  let input = In_channel.(open_text "examples/dependent.zap" |> input_all) in
   let l = Lexer.of_string input in
   let res' = Parser.parse_program l in
   let res = Alpha.rename_program res' in

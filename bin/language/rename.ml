@@ -95,9 +95,6 @@ end = struct
     | PList items ->
       let items, env = rename_list ~f:rename_pattern env items in
       (loc, PList items), env
-    | PTup items ->
-      let items, env = rename_list ~f:rename_pattern env items in
-      (loc, PTup items), env
   ;;
 
   let rec rename_expr (env : (string * bool) VM.t) ((loc, expr) : Ast.located_expr)
@@ -133,7 +130,7 @@ end = struct
       let rec collect_idents acc = function
         | _, PConst (_, Ident i) -> i :: acc
         | _, PCons (l, r) -> collect_idents acc l |> Fun.flip collect_idents r
-        | _, PList ps | _, PTup ps ->
+        | _, PList ps ->
           let rec go a = function
             | [] -> a
             | h :: t ->
@@ -190,25 +187,8 @@ end = struct
           bs
       in
       (loc, Match (e, bs)), env
-    | TypeLit (i, p, cs) ->
-      let i, env =
-        match i with
-        | None -> None, env
-        | Some i ->
-          let i' = fresh_alpha i in
-          let env = VM.add i (i', false) env in
-          Some i', env
-      in
-      let p = 
-        match p with
-        | PUdt u ->
-          (match VM.find_opt u env with
-          | Some (u, _) -> PUdt u
-          | None -> p)
-        | _ -> p
-      in
-      let cs, env = rename_list ~f:rename_expr env cs in
-      (loc, TypeLit (i, p, cs)), env
+    | TypeLit p -> (loc, TypeLit p), env
+    | Binding (i, e) -> (loc, Binding (i, e)), env (*TODO: cover this case *)
     | Pi (l, r) ->
       let l, env' = rename_expr env l in
       let r, _ = rename_expr env' r in

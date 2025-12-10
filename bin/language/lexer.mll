@@ -100,7 +100,7 @@ rule token = parse
   | float as f  {with_pos lexbuf (FLOAT (float_of_string f))}
   | '{'         {with_pos lexbuf LBRACE}
   | '}'         {with_pos lexbuf RBRACE}
-  | "()"        {with_pos lexbuf TY_UNIT}
+  | "()"        {with_pos lexbuf UNIT}
   | '('         {with_pos lexbuf LPAREN}
   | ')'         {with_pos lexbuf RPAREN}
   | '['         {with_pos lexbuf LBRACK}

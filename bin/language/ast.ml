@@ -8,28 +8,6 @@ type module_name = string
 type tname = string
 type binder = int
 
-type prim =
-  | PInt
-  | PFloat
-  | PString
-  | PChar
-  | PBool
-  | PAtom
-  | PUnit
-  | PUdt of string
-  | PType of int (* A : Type u *)
-
-type located_ty = Location.t * ty
-
-and ty =
-  | Arrow of located_ty * located_ty
-  | List of located_ty
-  | Ctor of tname * located_ty
-  | Tuple of located_ty list
-  | Prim of prim
-  | Udt of tname (* user defined type *)
-  | Quant of ident list * located_ty (* forall 'g₁ 'g₂ ... 'gₙ. ty *)
-
 type located_const = Location.t * const
 
 and const =
@@ -41,6 +19,16 @@ and const =
   | Atom of ident
   | Unit
   | Ident of ident
+
+type prim =
+  | PInt
+  | PFloat
+  | PString
+  | PChar
+  | PBool
+  | PAtom
+  | PUnit
+  | PUni of int (* A : Type n *)
 
 type binop =
   | IAdd | FAdd
@@ -67,7 +55,6 @@ and pattern =
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern
   | PList of located_pattern list
-  | PTup of located_pattern list
 
 type located_expr = Location.t * expr
 
@@ -76,17 +63,17 @@ and expr =
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
-  (* | ETup of located_expr list (* up for removal/definition within the language itself *) *)
   | Let of
       located_pattern
       * located_expr option
       * located_expr
-      * located_expr (* let p₁ ... pₙ : <optional_ty> = e1 in e2 *)
+      * located_expr (* let p₁ ... pₙ : <optional_ty> = e₁ in e₂ *)
   | Match of located_expr * (located_pattern * located_expr option * located_expr) list
   | If of located_expr * located_expr * located_expr option
   | Lam of located_pattern list * located_expr
   | Const of located_const
-  | TypeLit of ident option * prim * located_expr list (* (x : T a₁ ... aₙ) | T a₁ ... aₙ *)
+  | TypeLit of prim
+  | Binding of string * located_expr (* x : T *)
   | Pi of located_expr * located_expr
 
 type import_cond =
@@ -100,7 +87,7 @@ type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
 and tdecl_type =
-  | Alias of located_ty
+  | Alias of located_expr
   | Variant of (ident * located_expr) list
   | Record of (ident * located_expr) list
 
@@ -131,20 +118,7 @@ let show_prim = function
   | PBool -> "Bool"
   | PAtom -> "Atom"
   | PUnit -> "Unit"
-  | PUdt u -> u
-  | PType ix -> Printf.sprintf "Type %i" ix
-;;
-
-let rec show_ty = function
-  | Arrow ((_, l), (_, r)) -> Printf.sprintf "%s -> %s" (show_ty l) (show_ty r)
-  | List (_, t) -> Printf.sprintf "[%s]" (show_ty t)
-  | Ctor (c, (_, t)) -> Printf.sprintf "%s %s" c (show_ty t)
-  | Tuple ts ->
-    let ts = List.map (fun (_, t) -> show_ty t) ts in
-    Printf.sprintf "(%s)" (String.concat ", " ts)
-  | Prim p -> show_prim p
-  | Udt t -> t
-  | Quant (gs, (_, ty)) -> Printf.sprintf "forall %s. %s" (String.concat " " gs) (show_ty ty)
+  | PUni ix -> Printf.sprintf "Type %i" ix
 ;;
 
 let rec show_pat = function
@@ -152,7 +126,6 @@ let rec show_pat = function
   | _, PCons (l, r) -> Printf.sprintf "%s :: %s" (show_pat l) (show_pat r)
   | _, PCtor (n, p) -> Printf.sprintf "%s %s" n (show_pat p)
   | _, PList ls -> Printf.sprintf "[ %s ]" (List.map show_pat ls |> String.concat "; ")
-  | _, PTup ts -> Printf.sprintf "( %s )" (List.map show_pat ts |> String.concat ", ")
   | _, PConst (_, c) ->
     (match c with
      | Ident i -> i
@@ -170,22 +143,6 @@ let pp_ident out (i : ident) = Format.fprintf out "%s" i
 
 let pp_prim out (t : prim) =
   Format.fprintf out "%s" (show_prim t)
-;;
-
-let rec pp_ty out ((_, ty) : located_ty) =
-  match ty with
-  | Arrow (l, r) -> Format.fprintf out "(@[<hov>->@ %a@ %a@])" pp_ty l pp_ty r
-  | List t -> Format.fprintf out "[%a]" pp_ty t
-  | Ctor (c, t) -> Format.fprintf out "(@[<hov>%s@ %a@])" c pp_ty t
-  | Tuple ts ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_ty)
-      ts
-  | Prim p -> pp_prim out p
-  | Udt t -> pp_ident out t
-  | Quant (gs, ty) -> Format.fprintf out "forall %s. %a" (String.concat " " gs) pp_ty ty
 ;;
 
 let pp_const out ((_, c) : located_const) =
@@ -235,12 +192,6 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
       ps
-  | PTup ps ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
-      ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
   | PCtor (i, v) -> Format.fprintf out "(%s %a)" i pp_pattern v
 ;;
@@ -248,12 +199,6 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
-  (* | ETup t -> *)
-  (*   Format.fprintf *)
-  (*     out *)
-  (*     "(@[<hov>%a@])" *)
-  (*     Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_expr) *)
-  (*     t *)
   | List l ->
     Format.fprintf
       out
@@ -313,9 +258,9 @@ let rec pp_expr out ((_, e) : located_expr) =
       Format.(pp_print_list ~pp_sep:pp_print_cut pp_branch)
       bs
   | Pi (l, r) -> Format.fprintf out"(%a -> %a)" pp_expr l pp_expr r
-  | TypeLit (i, p, cs) ->
-    let i = match i with Some i -> Printf.sprintf "%s : " i | None -> "" in
-    Format.fprintf out "(%s%a %a)" i pp_prim p Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_expr) cs
+  | Binding (i, e) -> Format.fprintf out "(%s : %a)" i pp_expr e
+  | TypeLit p ->
+    Format.fprintf out "(%a)" pp_prim p
 ;;
 
 let pp_import_cond out (cond : import_cond) =
@@ -359,7 +304,7 @@ and pp_tdecl_type out (t : tdecl_type) =
     Format.fprintf out "(%s %a)" i pp_expr t
   in
   match t with
-  | Alias t -> pp_ty out t
+  | Alias t -> pp_expr out t
   | Record r ->
     Format.fprintf
       out

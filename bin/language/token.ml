@@ -3,14 +3,19 @@ open Util
 type t = Location.t * token
 
 and token =
-  | INT of int        | TY_INT
-  | FLOAT of float    | TY_FLOAT
-  | STRING of string  | TY_STRING
-  | CHAR of char      | TY_CHAR
-  | BOOL of bool      | TY_BOOL
-  | UNIT              | TY_UNIT
+  | INT of int
+  | TY_INT
+  | FLOAT of float
+  | TY_FLOAT
+  | STRING of string
+  | TY_STRING
+  | CHAR of char
+  | TY_CHAR
+  | BOOL of bool
+  | TY_BOOL
+  | UNIT
+  | TY_UNIT
   | TY_ATOM
-  (* | TY_PRIM of Ast.prim *)
   | IDENT of string
   | UPPER_IDENT of string
   | OP of string
@@ -169,7 +174,6 @@ let is_op (t : token) : bool =
   | NE
   | EQ -> true
   | _ -> false
-;;
 
 let op_to_string (t : token) : string =
   match t with
@@ -188,4 +192,3 @@ let op_to_string (t : token) : string =
   | NE -> "/="
   | EQ -> "="
   | _ -> ""
-;;

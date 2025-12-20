@@ -360,13 +360,20 @@ module Parser = struct
     | s, STRING str -> (s, Ast.Const (s, Ast.String str))
     | s, BOOL b -> (s, Ast.Const (s, Ast.Bool b))
     | s, UNIT -> (s, Ast.Const (s, Ast.Unit))
+    | s, TY_INT -> (s, Ast.TypeLit (Ast.PInt))
+    | s, TY_FLOAT -> (s, Ast.TypeLit (Ast.PFloat))
+    | s, TY_STRING -> (s, Ast.TypeLit (Ast.PString))
+    | s, TY_CHAR -> (s, Ast.TypeLit (Ast.PChar))
+    | s, TY_BOOL -> (s, Ast.TypeLit (Ast.PBool))
+    | s, TY_UNIT -> (s, Ast.TypeLit (Ast.PUnit))
+    | s, TY_ATOM -> (s, Ast.TypeLit (Ast.PAtom))
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
       (s, Ast.Const (loc, Ast.Atom i))
     | s, TTYPE -> (
       match Lexer.current l with
-      | e, INT i -> (Location.combine s e, Ast.TypeLit (Ast.PUni i))
+      | e, INT i -> Lexer.skip ~am:1 l; (Location.combine s e, Ast.TypeLit (Ast.PUni i))
       | _ -> (s, Ast.TypeLit (Ast.PUni 0)) (* x : Type => x : Type 0 *))
     | s, IDENT i -> (
       match Lexer.current l with

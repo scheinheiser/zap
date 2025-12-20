@@ -60,7 +60,7 @@ end = struct
   let rec find_ident ((_, e) : Ast.located_expr) : string =
     let open Ast in
     match e with
-    | Const (_, Ident i) -> Format.asprintf "%a" Ast.pp_ident i
+    | Const (_, Ident i) -> Ast.get_str_combine i
     | Ap (_, l, _) -> find_ident l
     | _ -> ""
 

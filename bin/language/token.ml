@@ -174,6 +174,7 @@ let is_op (t : token) : bool =
   | NE
   | EQ -> true
   | _ -> false
+;;
 
 let op_to_string (t : token) : string =
   match t with
@@ -192,3 +193,4 @@ let op_to_string (t : token) : string =
   | NE -> "/="
   | EQ -> "="
   | _ -> ""
+;;

@@ -1,21 +1,27 @@
 open! Language
 open! Parser
+open! Newparser
 open! Rename
 open! Typecheck
 
 let border () =
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;
   print_newline ()
+;;
 
 let () =
   (* let input = In_channel.(open_text "examples/dependent.zap" |> input_all) in *)
-  let input = "(x: Type 1) -> Int" in
-  let l = Lexer.of_string input in
-  let res = Parser.parse_expr l 0 (fresh_om ()) in
-  Format.fprintf Format.std_formatter "%a@." Ast.pp_expr res;
+  let input = "10 *10" in
+  print_endline input;
   border ();
-  (* let res = Alpha.rename_program res' in *)
-  match (Typecheck.infer (Typecheck.empty ()) res) with
-  | Error e -> print_endline (Base.Error.to_string_hum e)
-  | Ok (r, _) -> Typed_ast.pp_typed_expr Format.std_formatter r
-  (* Ast.pp_program Format.std_formatter res *)
+  (* let l = Lexer.of_string input in *)
+  let res = MParser.parse_string Newparser.expr input () in
+  match res with
+  | MParser.Success res -> Format.fprintf Format.std_formatter "%a@." Ast.pp_expr res
+  | MParser.Failed (e, _) -> print_endline e
+;;
+(* border (); *)
+(* let res = Alpha.rename_program res' in *)
+(* match (Typecheck.infer (Typecheck.empty ()) res) with *)
+(* | Error e -> print_endline (Base.Error.to_string_hum e) *)
+(* | Ok (r, _) -> Typed_ast.pp_typed_expr Format.std_formatter r *)

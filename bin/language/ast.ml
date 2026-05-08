@@ -17,9 +17,8 @@ and const =
   | Char of char
   | Bool of bool
   | Atom of ident
-  | Unit
   | Ident of ident
-  | Udc   of ident (* user defined costructor *)
+  | Udc of ident (* user defined costructor *)
 
 type prim =
   | PInt
@@ -69,8 +68,7 @@ and expr =
       * located_expr option
       * located_expr
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e₁ in e₂ *)
-  | Match of
-      located_expr * (located_pattern * located_expr option * located_expr) list
+  | Match of located_expr * (located_pattern * located_expr option * located_expr) list
   | If of located_expr * located_expr * located_expr option
   | Lam of located_pattern list * located_expr
   | Const of located_const
@@ -96,14 +94,8 @@ and tdecl_type =
 type located_definition = Location.t * definition
 
 and definition =
-  | Dec of bool * ident * located_expr
-  | Def of
-      bool
-      * ident
-      * located_pattern list
-      * located_expr option
-      * located_expr
-      * with_block
+  | Dec of ident * located_expr
+  | Def of ident * located_pattern list * located_expr option * located_expr * with_block
 (* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = located_definition list
@@ -126,20 +118,24 @@ let show_prim = function
   | PAtom -> "Atom"
   | PUnit -> "Unit"
   | PUni ix -> Printf.sprintf "U %i" ix
+;;
 
 let get_str = function
   | Str i -> i
   | GStr (i, _) -> i
+;;
 
 let get_str_combine = function
   | Str i -> i
   | GStr (i, n) -> i ^ string_of_int n
+;;
 
 (* Pretty printing *)
 let pp_ident out (i : ident) =
   match i with
   | Str i -> Format.fprintf out "%s" i
   | GStr (i, n) -> Format.fprintf out "%s%i" i n
+;;
 
 let pp_prim out (t : prim) = Format.fprintf out "%s" (show_prim t)
 
@@ -151,8 +147,8 @@ let pp_const out ((_, c) : located_const) =
   | Char c -> Format.fprintf out "'%s'" (Char.escaped c)
   | Bool b -> Format.fprintf out "%b" b
   | Atom a -> Format.fprintf out "%@%a" pp_ident a
-  | Unit -> Format.fprintf out "()"
   | Ident i | Udc i -> pp_ident out i
+;;
 
 let pp_binop out (b : binop) =
   let op =
@@ -177,79 +173,130 @@ let pp_binop out (b : binop) =
     | User_op o -> Format.asprintf "%a" pp_ident o
   in
   Format.fprintf out "%s" op
+;;
 
 let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
   | PWild -> Format.fprintf out "_"
   | PList ps ->
-    Format.fprintf out "[@[<hov>%a@]]"
-      Format.(
-        pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
+    Format.fprintf
+      out
+      "[@[<hov>%a@]]"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
       ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
-  | PCtor (i, v) -> Format.fprintf out "(%a %a)" pp_ident i Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern) v
+  | PCtor (i, v) ->
+    Format.fprintf
+      out
+      "(%a %a)"
+      pp_ident
+      i
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern)
+      v
+;;
 
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
   | List l ->
-    Format.fprintf out "[@[<hov>%a@]]"
+    Format.fprintf
+      out
+      "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
       l
-  | Ap (_, f, arg) ->
-    Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
+  | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) ->
     Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
   | Let (p, ty, v, n) ->
-    Format.fprintf out "@[<v>(@[<hov>%a@ %a@ %a@])@,%a@]" pp_pattern p
-      Format.(
-        pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
-      ty pp_expr v pp_expr n
+    Format.fprintf
+      out
+      "@[<v>(@[<hov>%a@ %a@ %a@])@,%a@]"
+      pp_pattern
+      p
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
+      ty
+      pp_expr
+      v
+      pp_expr
+      n
   | If (cond, tbranch, fbranch) ->
-    Format.fprintf out "(if@[<v> %a@,%a@,%a@])" pp_expr cond pp_expr tbranch
-      Format.(
-        pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
+    Format.fprintf
+      out
+      "(if@[<v> %a@,%a@,%a@])"
+      pp_expr
+      cond
+      pp_expr
+      tbranch
+      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
       fbranch
   | Lam (args, body) ->
-    Format.fprintf out "(la@[<v>m (%a) %a@])"
+    Format.fprintf
+      out
+      "(la@[<v>m (%a) %a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern)
-      args pp_expr body
+      args
+      pp_expr
+      body
   | Match (cond, bs) ->
     let pp_branch out (p, wb, b) =
-      Format.fprintf out "(wh@[<v>en %a@,%a %a@])"
-        Format.(
-          pp_print_option ~none:(fun out () -> fprintf out "true") pp_expr)
-        wb pp_pattern p pp_expr b
+      Format.fprintf
+        out
+        "(wh@[<v>en %a@,%a %a@])"
+        Format.(pp_print_option ~none:(fun out () -> fprintf out "true") pp_expr)
+        wb
+        pp_pattern
+        p
+        pp_expr
+        b
     in
-    Format.fprintf out "(ma@[<v>tch (%a)@,%a@])" pp_expr cond
+    Format.fprintf
+      out
+      "(ma@[<v>tch (%a)@,%a@])"
+      pp_expr
+      cond
       Format.(pp_print_list ~pp_sep:pp_print_cut pp_branch)
       bs
   | Pi (l, r) -> Format.fprintf out "(%a -> %a)" pp_expr l pp_expr r
   | Binding (i, e) -> Format.fprintf out "(%a : %a)" pp_ident i pp_expr e
   | TypeLit p -> Format.fprintf out "(%a)" pp_prim p
+;;
 
 let pp_import_cond out (cond : import_cond) =
   match cond with
   | CWith includes ->
-    Format.fprintf out "with (@[<hov>%a@])"
+    Format.fprintf
+      out
+      "with (@[<hov>%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
       includes
   | CWithout excludes ->
-    Format.fprintf out "without (@[<hov>%a@])"
+    Format.fprintf
+      out
+      "without (@[<hov>%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
       excludes
+;;
 
 let pp_import out ((_, (mod_name, cond)) : located_import) =
-  Format.fprintf out "(import %a @[<hov>%a@])" pp_ident mod_name
-    Format.(
-      pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
+  Format.fprintf
+    out
+    "(import %a @[<hov>%a@])"
+    pp_ident
+    mod_name
+    Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
     cond
+;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   match t with
   | Alias _ ->
-    Format.fprintf out "(ty@[<v>pe %a %a@])" pp_ident i pp_tdecl_type
+    Format.fprintf
+      out
+      "(ty@[<v>pe %a %a@])"
+      pp_ident
+      i
+      pp_tdecl_type
       t (* it looks nicer on a single line *)
   | _ -> Format.fprintf out "(ty@[<v>pe %a@,%a@])" pp_ident i pp_tdecl_type t
 
@@ -260,68 +307,91 @@ and pp_tdecl_type out (t : tdecl_type) =
   match t with
   | Alias t -> pp_expr out t
   | Record r ->
-    Format.fprintf out "(re@[<v>cord@,%a@])"
+    Format.fprintf
+      out
+      "(re@[<v>cord@,%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant v ->
-    Format.fprintf out "(va@[<v>riant@,%a@])"
+    Format.fprintf
+      out
+      "(va@[<v>riant@,%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       v
+;;
 
 let pp_when_block out (when_block : located_expr option) =
-  Format.fprintf out "%a"
+  Format.fprintf
+    out
+    "%a"
     Format.(
       pp_print_option
         ~none:(fun out () -> fprintf out "()")
         (fun out block -> fprintf out "(when @[<hov>%a@])" pp_expr block))
     when_block
+;;
 
 let rec pp_definition out ((_, def) : located_definition) =
   match def with
-  | Dec (_, f, ts) ->
-    Format.fprintf out "(dec %a @[<hov>%a@])" pp_ident f pp_expr ts
-  | Def (_, f, args, when_block, body, with_block) ->
-    Format.fprintf out "(de@[<v>f %a (%a)@,%a@,%a@,%a@])" pp_ident f
+  | Dec (f, ts) -> Format.fprintf out "(dec %a @[<hov>%a@])" pp_ident f pp_expr ts
+  | Def (f, args, when_block, body, with_block) ->
+    Format.fprintf
+      out
+      "(de@[<v>f %a (%a)@,%a@,%a@,%a@])"
+      pp_ident
+      f
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern)
-      args pp_when_block when_block pp_expr body pp_with_block with_block
+      args
+      pp_when_block
+      when_block
+      pp_expr
+      body
+      pp_with_block
+      with_block
 
 and pp_with_block out (with_block : with_block) =
   let block out () =
     match with_block with
     | [] -> Format.fprintf out "<none>"
     | _ ->
-      Format.fprintf out "%a"
+      Format.fprintf
+        out
+        "%a"
         Format.(pp_print_list ~pp_sep:pp_print_cut pp_definition)
         with_block
   in
   Format.fprintf out "(wi@[<v>th@,%a@])" block ()
+;;
 
-let pp_module out (mod_name : ident) =
-  Format.fprintf out "(module %a)" pp_ident mod_name
+let pp_module out (mod_name : ident) = Format.fprintf out "(module %a)" pp_ident mod_name
 
 let pp_program out ((prog_name, imports, types, body) : program) =
-  Format.fprintf out "%a@.@.%a@.@.%a@.@.%a@." pp_module prog_name
+  Format.fprintf
+    out
+    "%a@.@.%a@.@.%a@.@.%a@."
+    pp_module
+    prog_name
     Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_import)
     imports
     Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_ty_decl)
     types
-    Format.(
-      pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_definition)
+    Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@.") pp_definition)
     body
+;;
 
 (* utils pt 2 (being lazy) *)
 let rec show_pat = function
   | _, PWild -> "_"
   | _, PCons (l, r) -> Printf.sprintf "%s :: %s" (show_pat l) (show_pat r)
-  | _, PCtor (n, p) -> Format.asprintf "%a %s" pp_ident n (List.map show_pat p |> String.concat " ")
-  | _, PList ls ->
-    Printf.sprintf "[ %s ]" (List.map show_pat ls |> String.concat "; ")
-  | _, PConst (_, c) -> (
-    match c with
-    | Ident i | Udc i | Atom i -> Format.asprintf "%a" pp_ident i
-    | Int i -> string_of_int i
-    | Float f -> string_of_float f
-    | Char c -> Char.escaped c
-    | String s -> s
-    | Bool b -> string_of_bool b
-    | Unit -> "()")
+  | _, PCtor (n, p) ->
+    Format.asprintf "%a %s" pp_ident n (List.map show_pat p |> String.concat " ")
+  | _, PList ls -> Printf.sprintf "[ %s ]" (List.map show_pat ls |> String.concat "; ")
+  | _, PConst (_, c) ->
+    (match c with
+     | Ident i | Udc i | Atom i -> Format.asprintf "%a" pp_ident i
+     | Int i -> string_of_int i
+     | Float f -> string_of_float f
+     | Char c -> Char.escaped c
+     | String s -> s
+     | Bool b -> string_of_bool b)
+;;

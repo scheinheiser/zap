@@ -39,6 +39,7 @@ let get_const_type (c : Ast.const) : Ast.prim =
   | Ast.Char _ -> Ast.PChar
   | Ast.Bool _ -> Ast.PBool
   | Ast.Atom _ -> Ast.PAtom
+  | Ast.Unit -> Ast.PUnit
   | Ast.Ident _ | Ast.Udc _ ->
     raise (Error.InternalError "called `get_const_type` on identifier.")
 ;;

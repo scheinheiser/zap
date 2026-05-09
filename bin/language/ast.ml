@@ -17,6 +17,7 @@ and const =
   | Char of char
   | Bool of bool
   | Atom of ident
+  | Unit
   | Ident of ident
   | Udc of ident (* user defined costructor *)
 
@@ -147,6 +148,7 @@ let pp_const out ((_, c) : located_const) =
   | Char c -> Format.fprintf out "'%s'" (Char.escaped c)
   | Bool b -> Format.fprintf out "%b" b
   | Atom a -> Format.fprintf out "%@%a" pp_ident a
+  | Unit -> Format.fprintf out "()"
   | Ident i | Udc i -> pp_ident out i
 ;;
 
@@ -259,7 +261,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       bs
   | Pi (l, r) -> Format.fprintf out "(%a -> %a)" pp_expr l pp_expr r
   | Binding (i, e) -> Format.fprintf out "(%a : %a)" pp_ident i pp_expr e
-  | TypeLit p -> Format.fprintf out "(%a)" pp_prim p
+  | TypeLit p -> Format.fprintf out "%a" pp_prim p
 ;;
 
 let pp_import_cond out (cond : import_cond) =
@@ -393,5 +395,6 @@ let rec show_pat = function
      | Float f -> string_of_float f
      | Char c -> Char.escaped c
      | String s -> s
+     | Unit -> "()"
      | Bool b -> string_of_bool b)
 ;;

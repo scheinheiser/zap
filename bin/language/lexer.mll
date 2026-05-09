@@ -37,6 +37,7 @@
     ("Char", TY_CHAR);
     ("String", TY_STRING);
     ("Bool", TY_BOOL);
+    ("Unit", TY_UNIT);
     ("Atom", TY_ATOM);
     ("with", WITH);
     ("without", WITHOUT);
@@ -83,7 +84,7 @@
 }
 
 let int = '-'? ['0'-'9'] ['0'-'9' '_']*
-let float = '-'? ['0'-'9']+ '.' ['0'-'9']
+let float = '-'? ['0'-'9']+ '.' ['0'-'9']+
 
 let symbol = ['-' '+' '*' '\\' '&' '(' ')' '{' '}' '=' '|' '@' '>' '<' '%' '$' '^' '#' '!' ';' ':' '?' '.' ',']
 let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':']
@@ -91,7 +92,7 @@ let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':
 let newline = '\n' | '\r' | "\r\n"
 let whitespace = [' ' '\t']+
 let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' ' ' '\''] | symbol | newline
-let ident = ['a'-'z' 'A'-'Z' '\''] ['a'- 'z' 'A'-'Z' '0'-'9' '_' '\'']*
+let ident = ['a'-'z' 'A'-'Z'] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
 
 rule token = parse
   | whitespace  {token lexbuf}

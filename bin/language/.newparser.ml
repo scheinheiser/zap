@@ -143,7 +143,10 @@ let rec pnud s =
 and pattern s = expression pattern_operator pnud s
 
 (* expression parsing *)
-let expr_infix ?(assoc = Assoc_left) op cons = Infix (optional space >> string op >> optional space >> return cons, assoc)
+let expr_infix ?(assoc = Assoc_left) op cons =
+  Infix (optional (many space) >> string op >> optional space >> return cons, assoc)
+;;
+
 let expr_prefix op cons = Prefix (string op >> cons)
 
 let operators : (Ast.located_expr, unit) operator list list =

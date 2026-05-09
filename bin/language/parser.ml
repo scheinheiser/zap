@@ -208,7 +208,7 @@ module Parser = struct
 
   let get_bp (t : Token.token) (om : operator_map) : int =
     match t with
-    (* we give parentheses and brackets a slight bit of precedence for cases like `length (show 10)` *)
+    (* parser fail without this in cases like `f (g x)` *)
     | LPAREN | LBRACK | ARROW -> 1
     | NE | EQ -> 2
     | AND | OR -> 3
@@ -228,7 +228,7 @@ module Parser = struct
     | STRING _
     | BOOL _
     | UNIT
-    | ATSIGN -> 9
+    | ATSIGN -> 9 (* for function application *)
     | EOF -> -1
     | _ -> 0
   ;;
@@ -319,7 +319,7 @@ module Parser = struct
     | s, STRING i -> parse_cons l (s, Ast.PConst (s, Ast.String i))
     | s, CHAR i -> parse_cons l (s, Ast.PConst (s, Ast.Char i))
     | s, BOOL i -> parse_cons l (s, Ast.PConst (s, Ast.Bool i))
-    (* | s, UNIT -> parse_cons l (s, Ast.PConst (s, Ast.Unit)) *)
+    | s, UNIT -> parse_cons l (s, Ast.PConst (s, Ast.Unit))
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
@@ -340,23 +340,23 @@ module Parser = struct
     | _ -> left
   ;;
 
-  let[@warning "-27"] rec parse_expr
-                            (l : Lexer.t)
-                            ?should_parse_chain:(parse_chain = true)
-                            (limit : int)
-                            (om : operator_map)
+  let rec parse_expr
+            (l : Lexer.t)
+            ?should_parse_chain:(parse_chain = true)
+            (limit : int)
+            (om : operator_map)
     : Ast.located_expr
     =
-    let e = parse_expr' l limit om in
+    let ((s, _) as e) = parse_expr' l limit om in
     match Lexer.current l with
-    (* | _, SEMI when parse_chain -> *)
-    (*   Lexer.skip ~am:1 l; *)
-    (*   (* catches chained sequences, like e₁; e₂; e₃ *) *)
-    (*   let ((end', _) as next) = parse_expr l limit om in *)
-    (*   let location = Location.combine s end' in *)
-    (*   (* e₁; e₂ => let () = e₁ in e₂ *) *)
-    (*   let pat = (location, Ast.PConst (location, Ast.Unit)) in *)
-    (*   (location, Ast.Let (pat, Some (location, Ast.TypeLit Ast.PUnit), e, next)) *)
+    | _, SEMI when parse_chain ->
+      Lexer.skip ~am:1 l;
+      (* catches chained sequences, like e₁; e₂; e₃ *)
+      let ((end', _) as next) = parse_expr l limit om in
+      let location = Location.combine s end' in
+      (* e₁; e₂ => let () = e₁ in e₂ *)
+      let pat = location, Ast.PConst (location, Ast.Unit) in
+      location, Ast.Let (pat, Some (location, Ast.TypeLit Ast.PUnit), e, next)
     | _ -> e
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)

@@ -1,5 +1,6 @@
 (* made using https://github.com/contificate/summary as a reference *)
 open Util
+open Primitive
 
 (* operator associativity, for user-defined operators *)
 type assoc =
@@ -241,20 +242,20 @@ module Parser = struct
     | None -> 8
   ;;
 
-  let parse_upper_ident (l : Lexer.t) : Ast.ident =
+  let parse_upper_ident (l : Lexer.t) : ident =
     Lexer.consume_with
       l
       (function
-        | UPPER_IDENT i -> Some (Ast.Str i)
+        | UPPER_IDENT i -> Some (Str i)
         | _ -> None)
       "Expected a capitalised identifier."
   ;;
 
-  let parse_ident (l : Lexer.t) : Ast.ident =
+  let parse_ident (l : Lexer.t) : ident =
     Lexer.consume_with
       l
       (function
-        | IDENT i -> Some (Ast.Str i)
+        | IDENT i -> Some (Str i)
         | _ -> None)
       "Expected an identifier."
   ;;
@@ -297,7 +298,7 @@ module Parser = struct
          let e =
            Lexer.consume_with_pos l RPAREN "Expected ')' to end parenthesised pattern."
          in
-         parse_cons l (Location.combine s e, Ast.PCtor (Ast.Str i, ps))
+         parse_cons l (Location.combine s e, Ast.PCtor (Str i, ps))
        | _ ->
          let l' = parse_pattern l in
          (match Lexer.current l with
@@ -308,22 +309,22 @@ module Parser = struct
             Error.report_err
               (Some pos, Printf.sprintf "Expected ')', but got '%s'." (Token.show tok))))
     | s, WILDCARD -> parse_cons l (s, Ast.PWild)
-    | s, IDENT i -> parse_cons l (s, Ast.PConst (s, Ast.Ident (Ast.Str i)))
+    | s, IDENT i -> parse_cons l (s, Ast.PConst (s, Ident (Str i)))
     | s, UPPER_IDENT i ->
       (*TODO: support empty variants*)
       let ((e, _) as v) = parse_pattern l in
       let loc = Location.combine s e in
-      parse_cons l (loc, Ast.PCtor (Ast.Str i, [ v ]))
-    | s, INT i -> parse_cons l (s, Ast.PConst (s, Ast.Int i))
-    | s, FLOAT i -> parse_cons l (s, Ast.PConst (s, Ast.Float i))
-    | s, STRING i -> parse_cons l (s, Ast.PConst (s, Ast.String i))
-    | s, CHAR i -> parse_cons l (s, Ast.PConst (s, Ast.Char i))
-    | s, BOOL i -> parse_cons l (s, Ast.PConst (s, Ast.Bool i))
-    | s, UNIT -> parse_cons l (s, Ast.PConst (s, Ast.Unit))
+      parse_cons l (loc, Ast.PCtor (Str i, [ v ]))
+    | s, INT i -> parse_cons l (s, Ast.PConst (s, Int i))
+    | s, FLOAT i -> parse_cons l (s, Ast.PConst (s, Float i))
+    | s, STRING i -> parse_cons l (s, Ast.PConst (s, String i))
+    | s, CHAR i -> parse_cons l (s, Ast.PConst (s, Char i))
+    | s, BOOL i -> parse_cons l (s, Ast.PConst (s, Bool i))
+    | s, UNIT -> parse_cons l (s, Ast.PConst (s, Unit))
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
-      parse_cons l (loc, Ast.PConst (loc, Ast.Atom i))
+      parse_cons l (loc, Ast.PConst (loc, Atom i))
     | pos, tok ->
       Error.report_err
         ( Some pos
@@ -355,8 +356,8 @@ module Parser = struct
       let ((end', _) as next) = parse_expr l limit om in
       let location = Location.combine s end' in
       (* e₁; e₂ => let () = e₁ in e₂ *)
-      let pat = location, Ast.PConst (location, Ast.Unit) in
-      location, Ast.Let (pat, Some (location, Ast.TypeLit Ast.PUnit), e, next)
+      let pat = location, Ast.PConst (location, Unit) in
+      location, Ast.Let (pat, Some (location, Ast.TypeLit PUnit), e, next)
     | _ -> e
 
   (* https://www.youtube.com/watch?v=2l1Si4gSb9A *)
@@ -373,37 +374,37 @@ module Parser = struct
 
   and nud (l : Lexer.t) (om : operator_map) : Ast.located_expr =
     match Lexer.advance l with
-    | s, INT i -> s, Ast.Const (s, Ast.Int i)
-    | s, FLOAT f -> s, Ast.Const (s, Ast.Float f)
-    | s, CHAR c -> s, Ast.Const (s, Ast.Char c)
-    | s, STRING str -> s, Ast.Const (s, Ast.String str)
-    | s, BOOL b -> s, Ast.Const (s, Ast.Bool b)
-    | s, UNIT -> s, Ast.TypeLit Ast.PUnit
-    | s, TY_INT -> s, Ast.TypeLit Ast.PInt
-    | s, TY_FLOAT -> s, Ast.TypeLit Ast.PFloat
-    | s, TY_STRING -> s, Ast.TypeLit Ast.PString
-    | s, TY_CHAR -> s, Ast.TypeLit Ast.PChar
-    | s, TY_BOOL -> s, Ast.TypeLit Ast.PBool
-    | s, TY_UNIT -> s, Ast.TypeLit Ast.PUnit
-    | s, TY_ATOM -> s, Ast.TypeLit Ast.PAtom
+    | s, INT i -> s, Ast.Const (s, Int i)
+    | s, FLOAT f -> s, Ast.Const (s, Float f)
+    | s, CHAR c -> s, Ast.Const (s, Char c)
+    | s, STRING str -> s, Ast.Const (s, String str)
+    | s, BOOL b -> s, Ast.Const (s, Bool b)
+    | s, UNIT -> s, Ast.Const (s, Unit)
+    | s, TY_INT -> s, Ast.TypeLit PInt
+    | s, TY_FLOAT -> s, Ast.TypeLit PFloat
+    | s, TY_STRING -> s, Ast.TypeLit PString
+    | s, TY_CHAR -> s, Ast.TypeLit PChar
+    | s, TY_BOOL -> s, Ast.TypeLit PBool
+    | s, TY_UNIT -> s, Ast.TypeLit PUnit
+    | s, TY_ATOM -> s, Ast.TypeLit PAtom
     | s, ATSIGN ->
       let i = parse_ident l
       and loc = Location.combine s (Lexer.current_pos l) in
-      s, Ast.Const (loc, Ast.Atom i)
+      s, Ast.Const (loc, Atom i)
     | s, TTYPE ->
       (match Lexer.current l with
        | e, INT i ->
          Lexer.skip ~am:1 l;
-         Location.combine s e, Ast.TypeLit (Ast.PUni i)
-       | _ -> s, Ast.TypeLit (Ast.PUni 0) (* x : Type => x : Type 0 *))
+         Location.combine s e, Ast.TypeLit (PUni i)
+       | _ -> s, Ast.TypeLit (PUni 0) (* x : Type => x : Type 0 *))
     | s, IDENT i ->
       (match Lexer.current l with
        | _, COLON ->
          Lexer.skip ~am:1 l;
          let ((e, _) as b) = parse_expr l 0 om in
-         Location.combine s e, Ast.Binding (Ast.Str i, b)
-       | _ -> s, Ast.Const (s, Ast.Ident (Ast.Str i)))
-    | s, UPPER_IDENT i -> s, Ast.Const (s, Ast.Udc (Ast.Str i))
+         Location.combine s e, Ast.Binding (Str i, b)
+       | _ -> s, Ast.Const (s, Ident (Str i)))
+    | s, UPPER_IDENT i -> s, Ast.Const (s, Udc (Str i))
     | s, LET -> parse_let l om s
     | s, IF -> parse_if l om s
     | s, FUN -> parse_lam l om s
@@ -430,8 +431,8 @@ module Parser = struct
       (match next with
        | o when Token.is_op o ->
          Lexer.consume l RPAREN "Expected ')' after 'op' operator.";
-         let o = Ast.Str (Token.op_to_string o) in
-         Location.combine s pos, Ast.Const (s, Ast.Ident o)
+         let o = Str (Token.op_to_string o) in
+         Location.combine s pos, Ast.Const (s, Ident o)
        | op ->
          Error.report_err
            ( Some pos
@@ -454,54 +455,54 @@ module Parser = struct
     =
     let expr =
       match op with
-      | PLUS -> Ast.Bop (left, Ast.IAdd, parse_expr l lbp om)
-      | FPLUS -> Ast.Bop (left, Ast.FAdd, parse_expr l lbp om)
-      | MINUS -> Ast.Bop (left, Ast.ISub, parse_expr l lbp om)
-      | FMINUS -> Ast.Bop (left, Ast.FSub, parse_expr l lbp om)
-      | MUL -> Ast.Bop (left, Ast.IMul, parse_expr l lbp om)
-      | FMUL -> Ast.Bop (left, Ast.FMul, parse_expr l lbp om)
-      | DIV -> Ast.Bop (left, Ast.IDiv, parse_expr l lbp om)
-      | FDIV -> Ast.Bop (left, Ast.FDiv, parse_expr l lbp om)
-      | CONS -> Ast.Bop (left, Ast.Cons, parse_expr l (lbp - 1) om)
-      | NE -> Ast.Bop (left, Ast.NotEq, parse_expr l lbp om)
-      | EQ -> Ast.Bop (left, Ast.Equal, parse_expr l lbp om)
-      | LT -> Ast.Bop (left, Ast.Less, parse_expr l lbp om)
-      | LTE -> Ast.Bop (left, Ast.LessE, parse_expr l lbp om)
-      | GT -> Ast.Bop (left, Ast.Greater, parse_expr l lbp om)
-      | GTE -> Ast.Bop (left, Ast.GreaterE, parse_expr l lbp om)
-      | AND -> Ast.Bop (left, Ast.And, parse_expr l lbp om)
-      | OR -> Ast.Bop (left, Ast.Or, parse_expr l lbp om)
+      | PLUS -> Ast.Bop (left, IAdd, parse_expr l lbp om)
+      | FPLUS -> Ast.Bop (left, FAdd, parse_expr l lbp om)
+      | MINUS -> Ast.Bop (left, ISub, parse_expr l lbp om)
+      | FMINUS -> Ast.Bop (left, FSub, parse_expr l lbp om)
+      | MUL -> Ast.Bop (left, IMul, parse_expr l lbp om)
+      | FMUL -> Ast.Bop (left, FMul, parse_expr l lbp om)
+      | DIV -> Ast.Bop (left, IDiv, parse_expr l lbp om)
+      | FDIV -> Ast.Bop (left, FDiv, parse_expr l lbp om)
+      | CONS -> Ast.Bop (left, Cons, parse_expr l (lbp - 1) om)
+      | NE -> Ast.Bop (left, NotEq, parse_expr l lbp om)
+      | EQ -> Ast.Bop (left, Equal, parse_expr l lbp om)
+      | LT -> Ast.Bop (left, Less, parse_expr l lbp om)
+      | LTE -> Ast.Bop (left, LessE, parse_expr l lbp om)
+      | GT -> Ast.Bop (left, Greater, parse_expr l lbp om)
+      | GTE -> Ast.Bop (left, GreaterE, parse_expr l lbp om)
+      | AND -> Ast.Bop (left, And, parse_expr l lbp om)
+      | OR -> Ast.Bop (left, Or, parse_expr l lbp om)
       | OP o ->
-        Ast.Bop (left, Ast.User_op (Ast.Str o), parse_expr l (get_bp_with_fixity o om) om)
+        Ast.Bop (left, User_op (Str o), parse_expr l (get_bp_with_fixity o om) om)
       | ARROW -> Ast.Pi (left, parse_expr l (lbp - 1) om)
-      | INT i -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Int i)))
-      | FLOAT f -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Float f)))
-      | CHAR c -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Char c)))
-      | STRING str -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.String str)))
-      | BOOL b -> Ast.Ap (0, left, (s, Ast.Const (s, Ast.Bool b)))
-      | UNIT -> Ast.Ap (0, left, (s, Ast.TypeLit Ast.PUnit))
+      | INT i -> Ast.Ap (0, left, (s, Ast.Const (s, Int i)))
+      | FLOAT f -> Ast.Ap (0, left, (s, Ast.Const (s, Float f)))
+      | CHAR c -> Ast.Ap (0, left, (s, Ast.Const (s, Char c)))
+      | STRING str -> Ast.Ap (0, left, (s, Ast.Const (s, String str)))
+      | BOOL b -> Ast.Ap (0, left, (s, Ast.Const (s, Bool b)))
+      | UNIT -> Ast.Ap (0, left, (s, Ast.Const (s, Unit)))
       | IDENT i ->
         let r =
           match Lexer.current l with
           | _, COLON ->
             Lexer.skip ~am:1 l;
             let ((e, _) as b) = parse_expr l 0 om in
-            Location.combine s e, Ast.Binding (Ast.Str i, b)
-          | _ -> s, Ast.Const (s, Ast.Ident (Ast.Str i))
+            Location.combine s e, Ast.Binding (Str i, b)
+          | _ -> s, Ast.Const (s, Ident (Str i))
         in
         Ast.Ap (0, left, r)
       | UPPER_IDENT i ->
-        let r = s, Ast.Const (s, Ast.Udc (Ast.Str i)) in
+        let r = s, Ast.Const (s, Udc (Str i)) in
         Ast.Ap (0, left, r)
       | ATSIGN ->
         let i = parse_ident l
         and loc = Location.combine s (Lexer.current_pos l) in
-        Ast.Ap (0, left, (loc, Ast.Const (loc, Ast.Atom i)))
+        Ast.Ap (0, left, (loc, Ast.Const (loc, Atom i)))
       | TTYPE ->
         (match Lexer.current l with
-         | e, INT i -> Ast.Ap (0, left, (Location.combine s e, Ast.TypeLit (Ast.PUni i)))
+         | e, INT i -> Ast.Ap (0, left, (Location.combine s e, Ast.TypeLit (PUni i)))
          | _ ->
-           Ast.Ap (0, left, (s, Ast.TypeLit (Ast.PUni 0))) (* x : Type => x : Type 0 *))
+           Ast.Ap (0, left, (s, Ast.TypeLit (PUni 0))) (* x : Type => x : Type 0 *))
       | LBRACK ->
         let es = Lexer.separated_list l SEMI (fun e -> parse_expr e 0 om) in
         let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
@@ -639,9 +640,9 @@ module Parser = struct
     let e = Lexer.consume_with_pos l DOT "Expected '.' after function signature." in
     Location.combine s e, Ast.Dec (n, t)
 
-  and parse_definition_ident (l : Lexer.t) : Ast.ident =
+  and parse_definition_ident (l : Lexer.t) : ident =
     match Lexer.advance l with
-    | _, IDENT i -> Ast.Str i
+    | _, IDENT i -> Str i
     | _, LPAREN ->
       let i =
         Lexer.consume_with
@@ -652,7 +653,7 @@ module Parser = struct
           "Expected operator after '(' in definition."
       in
       Lexer.consume l RPAREN "Expected ')' after operator identifier.";
-      Ast.Str i
+      Str i
     | pos, tok ->
       Error.report_err
         ( Some pos
@@ -669,7 +670,7 @@ module Parser = struct
     let ty, e = parse_tydecl_type l ident om in
     Location.combine s e, (ident, ty)
 
-  and parse_tydecl_type (l : Lexer.t) (ident : Ast.ident) (om : operator_map)
+  and parse_tydecl_type (l : Lexer.t) (ident : ident) (om : operator_map)
     : Ast.tdecl_type * Location.t
     =
     match Lexer.current l with
@@ -695,11 +696,11 @@ module Parser = struct
           Lexer.skip ~am:1 l;
           let ((e, _) as t) = parse_expr l 0 om in
           let loc = Location.combine s e in
-          i, (loc, Ast.Pi (t, (loc, Ast.Const (loc, Ast.Ident ident))))
+          i, (loc, Ast.Pi (t, (loc, Ast.Const (loc, Ident ident))))
           (*TODO: do something about the constructors! *)
         | _ ->
           let loc = Location.combine s (Lexer.current_pos l) in
-          i, (loc, Ast.Const (loc, Ast.Ident ident))
+          i, (loc, Ast.Const (loc, Ident ident))
         (*TODO: do something about the constructors! *)
       in
       let fields = Lexer.separated_list l PIPE parse_variant in
@@ -709,7 +710,7 @@ module Parser = struct
       t, Lexer.current_pos l
   ;;
 
-  let parse_module (l : Lexer.t) : Ast.ident =
+  let parse_module (l : Lexer.t) : ident =
     Lexer.consume l ATSIGN "Expected an '@' before 'module' keyword.";
     Lexer.consume l MODULE "Expected the 'module' keyword.";
     parse_upper_ident l
@@ -746,8 +747,8 @@ module Parser = struct
           Lexer.consume_with_pos l RPAREN "Expected a ')' to end the import condition."
         in
         contents, p
-      | p, IDENT i -> [ Ast.Str i ], p
-      | p, UPPER_IDENT i -> [ Ast.Str i ], p
+      | p, IDENT i -> [ Str i ], p
+      | p, UPPER_IDENT i -> [ Str i ], p
       | pos, tok ->
         Error.report_err
           ( Some pos
@@ -757,11 +758,11 @@ module Parser = struct
     in
     if cond_type then Ast.CWith values, e else Ast.CWithout values, e
 
-  and parse_import_ident (l : Lexer.t) : Ast.ident =
+  and parse_import_ident (l : Lexer.t) : ident =
     Lexer.consume_with
       l
       (function
-        | UPPER_IDENT i | IDENT i -> Some (Ast.Str i)
+        | UPPER_IDENT i | IDENT i -> Some (Str i)
         | _ -> None)
       "Expected an identifier."
   ;;

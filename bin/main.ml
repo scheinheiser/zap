@@ -1,7 +1,5 @@
 open! Language
 open! Parser
-open! Rename
-open! Typecheck
 
 let border () =
   Seq.init 30 (fun _ -> '-') |> String.of_seq |> print_endline;

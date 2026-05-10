@@ -1,8 +1,12 @@
+open Primitive
+open Desugar
+
+(* alpha renaming *)
 module AR : sig
   val user_bind : int
-  val find_ident : Ast.located_expr -> string
-  val fresh_alpha : string -> Ast.ident
-  val rename_program : Ast.program -> Ast.program
+  val find_ident : located_expr -> string
+  val fresh_alpha : string -> ident
+  val rename_program : program -> program
 end = struct
   module VM = Map.Make (String)
 
@@ -42,7 +46,7 @@ end = struct
     let i = ref (-1) in
     fun s ->
       incr i;
-      Ast.GStr (s, !i)
+      GStr (s, !i)
   ;;
 
   let fresh_env () = VM.empty
@@ -59,21 +63,19 @@ end = struct
     go [] env l
   ;;
 
-  let rec find_ident ((_, e) : Ast.located_expr) : string =
-    let open Ast in
+  let rec find_ident ((_, e) : located_expr) : string =
     match e with
-    | Const (_, Ident i) -> Ast.get_str_combine i
+    | Const (_, Ident i) -> get_str_combine i
     | Ap (_, l, _) -> find_ident l
     | _ -> ""
   ;;
 
-  let rec rename_pattern (env : Ast.ident VM.t) ((loc, pat) : Ast.located_pattern)
-    : Ast.located_pattern * Ast.ident VM.t
+  let rec rename_pattern (env : ident VM.t) ((loc, pat) : located_pattern)
+    : located_pattern * ident VM.t
     =
-    let open Ast in
     match pat with
     | PConst (s, Ident i) ->
-      let i = Ast.get_str i in
+      let i = get_str i in
       let i' = fresh_alpha i in
       let env = VM.add i i' env in
       (loc, PConst (s, Ident i')), env
@@ -85,36 +87,29 @@ end = struct
       (loc, PCons (l, r)), env
     | PCtor (i, v) ->
       let i =
-        match VM.find_opt (Ast.get_str i) env with
+        match VM.find_opt (get_str i) env with
         | Some i' -> i'
         | None -> i
       in
       let v, env = rename_list ~f:rename_pattern env v in
       (loc, PCtor (i, v)), env
-    | PList items ->
-      let items, env = rename_list ~f:rename_pattern env items in
-      (loc, PList items), env
   ;;
 
-  let rec rename_expr (env : Ast.ident VM.t) ((loc, expr) : Ast.located_expr)
-    : Ast.located_expr * Ast.ident VM.t
+  let rec rename_expr (env : ident VM.t) ((loc, expr) : located_expr)
+    : located_expr * ident VM.t
     =
-    let open Ast in
     match expr with
     | Const (s, Ident i) ->
-      (match VM.find_opt (Ast.get_str i) env with
+      (match VM.find_opt (get_str i) env with
        | Some i' -> (loc, Const (s, Ident i')), env
        | None -> (loc, Const (s, Ident i)), env)
     | Const _ -> (loc, expr), env
-    | List items ->
-      let items', env' = rename_list ~f:rename_expr env items in
-      (loc, List items'), env'
     | Bop (l, op, r) ->
       let l', env' = rename_expr env l in
       let r', env'' = rename_expr env' r in
       (match op with
        | User_op i ->
-         (match VM.find_opt (Ast.get_str i) env with
+         (match VM.find_opt (get_str i) env with
           | Some i' -> (loc, Bop (l', User_op i', r')), env
           | None -> (loc, Bop (l', op, r')), env)
        | _ -> (loc, Bop (l', op, r')), env'')
@@ -129,7 +124,7 @@ end = struct
       let rec collect_idents acc = function
         | _, PConst (_, Ident i) -> i :: acc
         | _, PCons (l, r) -> collect_idents acc l |> Fun.flip collect_idents r
-        | _, PList ps | _, PCtor (_, ps) ->
+        | _, PCtor (_, ps) ->
           let rec go a = function
             | [] -> a
             | h :: t ->
@@ -151,7 +146,7 @@ end = struct
         let idents =
           collect_idents [] p
           |> List.map (fun i ->
-            let i = Ast.get_str i in
+            let i = get_str i in
             let i' = fresh_alpha i in
             i, i')
         in
@@ -160,21 +155,10 @@ end = struct
       in
       let n, env = rename_expr env n in
       (loc, Let (p, t, expr, n)), env
-    | If (e, t, f) ->
-      let e, env = rename_expr env e in
-      let t, env = rename_expr env t in
-      let f, env =
-        match f with
-        | Some f' ->
-          let t, e = rename_expr env f' in
-          Some t, e
-        | None -> None, env
-      in
-      (loc, If (e, t, f)), env
-    | Lam (ps, t) ->
-      let ps, env = rename_list ~f:rename_pattern env ps in
+    | Lam (p, t) ->
+      let p, env = rename_pattern env p in
       let t, _ = rename_expr env t in
-      (loc, Lam (ps, t)), env
+      (loc, Lam (p, t)), env
     | Match (e, bs) ->
       let e, _ = rename_expr env e in
       let bs =
@@ -195,17 +179,16 @@ end = struct
       (loc, Pi (l, r)), env
   ;;
 
-  let rec rename_definition (env : Ast.ident VM.t) ((loc, d) : Ast.located_definition)
-    : Ast.located_definition * Ast.ident VM.t
+  let rec rename_definition (env : ident VM.t) ((loc, d) : located_definition)
+    : located_definition * ident VM.t
     =
-    let open Ast in
     match d with
     | Dec (i, sig') ->
       let i, env =
-        if Ast.get_str i = "main"
+        if get_str i = "main"
         then i, env
         else (
-          let i = Ast.get_str i in
+          let i = get_str i in
           let i' = fresh_alpha i in
           let env' = VM.add i i' env in
           i', env')
@@ -214,10 +197,10 @@ end = struct
       (loc, Dec (i, sig')), env
     | Def (i, args, when_block, body, with_block) ->
       let i, env =
-        if Ast.get_str i = "main"
+        if get_str i = "main"
         then i, env
         else (
-          let i = Ast.get_str i in
+          let i = get_str i in
           match VM.find_opt i env with
           | Some i' -> i', env
           | _ ->
@@ -238,7 +221,7 @@ end = struct
       (loc, Def (i, args, when_block, body, with_block)), env
   ;;
 
-  let rename_program ((prog_name, imps, tys, defs) : Ast.program) : Ast.program =
+  let rename_program ((prog_name, imps, tys, defs) : program) : program =
     let defs = rename_list ~f:rename_definition (fresh_env ()) defs |> fst in
     prog_name, imps, tys, defs
   ;;

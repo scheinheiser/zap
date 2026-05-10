@@ -1,6 +1,9 @@
+open Primitive
+open Desugar
+
 module AR : sig
   val user_bind : int
-  val find_ident : Ast.located_expr -> string
-  val fresh_alpha : string -> Ast.ident
-  val rename_program : Ast.program -> Ast.program
+  val find_ident : located_expr -> string
+  val fresh_alpha : string -> ident
+  val rename_program : program -> program
 end

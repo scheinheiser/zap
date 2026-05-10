@@ -1,4 +1,6 @@
 open Util
+open Primitive
+
 module C = Map.Make (String)
 
 let ( let* ) = Base.Or_error.( >>= )
@@ -27,24 +29,24 @@ let make_err (e : Error.t) : 'a Base.Or_error.t =
 ;;
 
 let get_level = function
-  | Ast.PUni ix -> ix
+  | PUni ix -> ix
   | _ -> 0
 ;;
 
-let get_const_type (c : Ast.const) : Ast.prim =
+let get_const_type (c : const) : prim =
   match c with
-  | Ast.Int _ -> Ast.PInt
-  | Ast.Float _ -> Ast.PFloat
-  | Ast.String _ -> Ast.PString
-  | Ast.Char _ -> Ast.PChar
-  | Ast.Bool _ -> Ast.PBool
-  | Ast.Atom _ -> Ast.PAtom
-  | Ast.Unit -> Ast.PUnit
-  | Ast.Ident _ | Ast.Udc _ ->
+  | Int _ -> PInt
+  | Float _ -> PFloat
+  | String _ -> PString
+  | Char _ -> PChar
+  | Bool _ -> PBool
+  | Atom _ -> PAtom
+  | Unit -> PUnit
+  | Ident _ | Udc _ ->
     raise (Error.InternalError "called `get_const_type` on identifier.")
 ;;
 
-(* β-reduction with a list of ctxtitutions *)
+(* β-reduction *)
 let rec reduce
           (ctx : ctx)
           ((ty, e) : Typed_ast.typed_expr)
@@ -53,14 +55,11 @@ let rec reduce
   let go ((loc, e) as te) =
     let open Typed_ast in
     match e with
-    | Const (_, Ast.Ident i) ->
-      let i = Ast.get_str_combine i in
+    | Const (_, Ident i) ->
+      let i = get_str_combine i in
       (match lookup ctx i with
        | None -> te
        | Some e -> snd e)
-    | List es ->
-      let es = List.map (fun e -> reduce ctx e) es in
-      loc, List es
     | Bop (l, op, r) ->
       let l = reduce ctx l
       and r = reduce ctx r in
@@ -73,11 +72,6 @@ let rec reduce
       let e = reduce ctx e
       and next = reduce ctx next in
       loc, Let (p, e, next)
-    | If (c, tr, f) ->
-      let c = reduce ctx c
-      and tr = reduce ctx tr
-      and f = Base.Option.map ~f:(fun f -> reduce ctx f) f in
-      loc, If (c, tr, f)
     | Lam (p, b) ->
       let b = reduce ctx b in
       loc, Lam (p, b)
@@ -105,7 +99,7 @@ let rec reduce
 (* checks that a pattern and a given expression can be matched *)
 let rec unify_pat
           (ctx : ctx)
-          ((_, p) as p_with_loc : Ast.located_pattern)
+          ((_, p) as p_with_loc : Typed_ast.located_pattern)
           ((((_, t') as t), ((loc, _) as e)) : Typed_ast.typed_expr)
   : ctx Base.Or_error.t
   =
@@ -113,24 +107,19 @@ let rec unify_pat
     let msg =
       Format.asprintf
         "Failed to unify pattern '%s' with type %a."
-        (Ast.show_pat pattern)
+        (Typed_ast.show_pat pattern)
         Typed_ast.pp_expr
         t
     in
     make_err (Some loc, msg)
   in
   match p, t' with
-  | _, Typed_ast.Const (_, Ast.Ident i) ->
-    (match lookup ctx (Ast.get_str_combine i) with
+  | _, Typed_ast.Const (_, Ident i) ->
+    (match lookup ctx (get_str_combine i) with
      | None ->
-       make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (Ast.get_str i))
+       make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
      | Some e -> unify_pat ctx p_with_loc e)
-  | Ast.PConst (_, Ast.Ident i), _ -> Ok (extend ctx (Ast.get_str_combine i) ~t ~v:e)
-  | _, Typed_ast.If (_, tr, fa) ->
-    let* ctx = unify_pat ctx p_with_loc tr in
-    (match fa with
-     | None -> Ok ctx
-     | Some fa -> unify_pat ctx p_with_loc fa)
+  | Typed_ast.PConst (_, Ident i), _ -> Ok (extend ctx (get_str_combine i) ~t ~v:e)
   | _, Typed_ast.Match (_, bs) ->
     let open Base.Or_error in
     let rec go ctx acc = function
@@ -142,24 +131,23 @@ let rec unify_pat
     in
     let bs, ctx = go ctx [] bs in
     combine_errors bs >>| fun _ -> ctx
-  | Ast.PCons (l, r), Typed_ast.List (e :: es) ->
-    let* ctx = unify_pat ctx l e in
-    let es = t, (loc, Typed_ast.List es) in
-    unify_pat ctx r es
-  | Ast.PConst (_, c), Typed_ast.Const (_, c') ->
+  | Typed_ast.PCons (l, r), Typed_ast.Bop (l', Cons, r') ->
+    let* ctx = unify_pat ctx l l' in
+    unify_pat ctx r r'
+  | Typed_ast.PConst (_, c), Typed_ast.Const (_, c') ->
     let lc = get_const_type c in
     let rc = get_const_type c' in
     if lc = rc then Ok ctx else uni_err loc p_with_loc t
-  | Ast.PConst (_, c), Typed_ast.Bop (_, _, _) | Ast.PConst (_, c), Typed_ast.Ap (_, _, _)
+  | Typed_ast.PConst (_, c), Typed_ast.Bop (_, _, _) | Typed_ast.PConst (_, c), Typed_ast.Ap (_, _, _)
     ->
     let _ = get_const_type c in
     failwith "finish normalise! for equality function"
-  | Ast.PCtor (i, ps), Typed_ast.Ap (_, l, r) ->
+  | Typed_ast.PCtor (i, ps), Typed_ast.Ap (_, l, r) ->
     let rec find_ident (_, e) =
       let open Typed_ast in
       match e with
-      | _, Const (_, Ident i) -> Ast.get_str_combine i, false
-      | _, Const (_, Udc i) -> Ast.get_str_combine i, true
+      | _, Const (_, Ident i) -> get_str_combine i, false
+      | _, Const (_, Udc i) -> get_str_combine i, true
       | _, Ap (_, l, _) -> find_ident l
       | _ -> "", false
     in
@@ -172,7 +160,7 @@ let rec unify_pat
              Typed_ast.pp_typed_expr
              l )
      | i', _ ->
-       let i = Ast.get_str_combine i in
+       let i = get_str_combine i in
        let cons =
          let rec go acc = function
            | _, (_, Typed_ast.Ap (_, l, r)) -> go (r :: acc) l
@@ -181,7 +169,7 @@ let rec unify_pat
          List.rev @@ (r :: go [] l)
        in
        (match () with
-        | _ when List.length cons <> List.length ps -> failwith ""
+        | _ when List.length cons <> List.length ps -> failwith "" (*TODO:something something empty variants *)
         | _ when i <> i' ->
           make_err
             (Some loc, Printf.sprintf "Expected '%s' constructor, but got '%s'." i i')
@@ -197,18 +185,14 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
   : (Typed_ast.typed_expr * ctx) Base.Or_error.t
   =
   let open Typed_ast in
-  let open Base.Or_error in
   let rec go ctx (loc, e) =
     match e with
     | Const (_, Ident i) ->
-      (match lookup_value ctx (Ast.get_str_combine i) with
+      (match lookup_value ctx (get_str_combine i) with
        | None ->
-         make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (Ast.get_str i))
+         make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
        | Some v -> go ctx v)
     | Const _ -> Ok ((loc, e), ctx)
-    | List es ->
-      let@ es = List.map (fun e -> normalise ctx e |> map ~f:fst) es |> combine_errors in
-      (loc, List es), ctx
     | Bop (l, op, r) ->
       let* l, _ = normalise ctx l in
       let@ r, _ = normalise ctx r in
@@ -224,7 +208,7 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
        | _ -> Ok ((loc, Ap (b, l, r)), ctx))
     | Binding (i, t) ->
       let@ t, _ = normalise ctx t in
-      (loc, Binding (i, t)), extend ctx (Ast.get_str_combine i) ~t:(fst t) ~v:(snd t)
+      (loc, Binding (i, t)), extend ctx (get_str_combine i) ~t:(fst t) ~v:(snd t)
     | Let (p, e, n) ->
       let last_expr =
         let rec go = function
@@ -237,14 +221,6 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       let* ctx' = unify_pat ctx p last_expr in
       let@ n, _ = normalise ctx' n in
       (loc, Let (p, e, n)), ctx
-    | If (c, tr, fa) ->
-      let* c, _ = normalise ctx c in
-      let* tr, _ = normalise ctx tr in
-      (match fa with
-       | None -> Ok ((loc, If (c, tr, fa)), ctx)
-       | Some fa ->
-         let@ fa, _ = normalise ctx fa in
-         (loc, If (c, tr, Some fa)), ctx)
     | Match (c, bs) ->
       let* c, _ = normalise ctx c in
       let normalise_branch ctx (p, wb, b) =
@@ -262,7 +238,6 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       let@ bs = List.map (normalise_branch ctx) bs |> Base.Or_error.combine_errors in
       (loc, Match (c, bs)), ctx
     | Lam (p, b) ->
-      (*NOTE: this may cause issues, keep an eye on it *)
       let@ b, _ = normalise ctx b in
       (loc, Lam (p, b)), ctx
     | Pi (l, r) ->
@@ -277,16 +252,16 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
 ;;
 
 (* type inference for expressions *)
-let rec infer (ctx : ctx) ((loc, e) : Ast.located_expr)
+let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
   : (Typed_ast.typed_expr * ctx) Base.Or_error.t
   =
-  let open Ast in
+  let open Desugar in
   match e with
   | Const (l, Ident i) ->
-    let i' = Ast.get_str_combine i in
+    let i' = get_str_combine i in
     (match lookup_ty ctx i' with
      | None ->
-       make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (Ast.get_str i))
+       make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
      | Some t ->
        let e = t, (loc, Typed_ast.Const (l, Ident i)) in
        Ok (e, ctx))
@@ -307,7 +282,7 @@ let rec infer (ctx : ctx) ((loc, e) : Ast.located_expr)
     (* the 'binding' expression is given the type of the bound type. *)
     let e' = fst e, (loc, Typed_ast.Binding (i, e)) in
     (* the identifier itself is associated with the bound type *)
-    e', extend ctx (Ast.get_str_combine i) ~t:(snd e) ~v:(snd e')
+    e', extend ctx (get_str_combine i) ~t:(snd e) ~v:(snd e')
   | Pi (l, r) ->
     let* l, ctx' = infer ctx l in
     let* r, _ = infer ctx' r in

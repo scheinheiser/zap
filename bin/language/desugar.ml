@@ -1,7 +1,7 @@
-(* made with occasional referencing of https://github.com/camllight/camllight/blob/master/sources/src/compiler/syntax.ml *)
 open Util
 open Primitive
 
+(* desugared syntax *)
 type located_pattern = Location.t * pattern
 
 and pattern =
@@ -9,12 +9,10 @@ and pattern =
   | PConst of located_const
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern list
-  | PList of located_pattern list
 
 type located_expr = Location.t * expr
 
 and expr =
-  | List of located_expr list
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
@@ -24,8 +22,8 @@ and expr =
       * located_expr
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e₁ in e₂ *)
   | Match of located_expr * (located_pattern * located_expr option * located_expr) list
-  | If of located_expr * located_expr * located_expr option
-  | Lam of located_pattern list * located_expr
+  | Lam of located_pattern * located_expr
+    (* `fun x y => x` is desugared to `fun x => fun y => x` *)
   | Const of located_const
   | TypeLit of prim
   | Binding of ident * located_expr (* x : T *)
@@ -63,16 +61,81 @@ type top_lvl =
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
+let rec desugar_pat ((loc, e) : Ast.located_pattern): located_pattern = 
+  match e with
+  | Ast.PWild -> loc, PWild
+  | Ast.PConst c -> loc, PConst c
+  | Ast.PCons (l, r) ->
+    let l = desugar_pat l in
+    let r = desugar_pat r in
+    loc, PCons (l, r)
+  | Ast.PCtor (i, ps) ->
+    let ps = List.map desugar_pat ps in
+    loc, PCtor (i, ps)
+  | Ast.PList ps ->
+    List.fold_right (fun n acc -> let n = desugar_pat n in loc, PCons (n, acc)) ps (loc, PConst (loc, String "empty list"))
+
+(* desugar a given surface syntax construct to its core grammar equivalent *)
+let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
+  match e with
+  | Ast.Const c -> loc, Const c
+  | Ast.TypeLit t -> loc, TypeLit t
+  | Ast.Binding (i, e) ->
+    let e = desugar_expr e in
+    loc, Binding (i, e)
+  | Ast.Bop (l, op, r) ->
+    let l = desugar_expr l in
+    let r = desugar_expr r in
+    loc, Bop (l, op, r)
+  | Ast.Ap (b, l, r) ->
+    let l = desugar_expr l in
+    let r = desugar_expr r in
+    loc, Ap (b, l, r)
+  | Ast.Pi (l, r) ->
+    let l = desugar_expr l in
+    let r = desugar_expr r in
+    loc, Pi (l, r)
+  | Ast.List es ->
+    List.fold_right (fun n acc -> let n = desugar_expr n in loc, Bop (n, Cons, acc)) es (loc, Const (loc, String "empty list"))
+  | Ast.Let (p, t, e, n) ->
+    let p = desugar_pat p in
+    let t = Base.Option.map ~f:desugar_expr t in
+    let e = desugar_expr e in
+    let n = desugar_expr n in
+    loc, Let (p, t, e, n)
+  | Ast.If (c, t, f) ->
+    let c = desugar_expr c in
+    let t = desugar_expr t in
+    let branches =
+      let tp = loc, PConst (loc, Bool true) in
+      let tb = [(tp, None, t)] in
+      match f with
+      | None -> tb
+      | Some f ->
+        let f = desugar_expr f in
+        let fp = loc, PConst (loc, Bool false) in
+        tb @ [(fp, None, f)]
+    in loc, Match (c, branches)
+  | Ast.Match (c, branches) ->
+    let c = desugar_expr c in
+    let branches =
+      List.map (fun (cond, wb, b) -> (desugar_pat cond, Base.Option.map ~f:desugar_expr wb, desugar_expr b)) branches
+    in loc, Match (c, branches)
+  | Ast.Lam (ps, b) ->
+    let b = desugar_expr b in
+    (match ps with
+    | [] -> raise (Error.InternalError "Internal error - no arguments to a lambda function.")
+    | [ p ] ->
+      let p = desugar_pat p in
+      loc, Lam (p, b)
+    | ps ->
+      List.fold_left (fun acc n -> let n = desugar_pat n in loc, Lam (n, acc)) b (List.rev ps))
+
+(* pretty printing *)
 let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
   | PWild -> Format.fprintf out "_"
-  | PList ps ->
-    Format.fprintf
-      out
-      "[@[<hov>%a@]]"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
-      ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
   | PCtor (i, v) ->
     Format.fprintf
@@ -87,12 +150,6 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
 let rec pp_expr out ((_, e) : located_expr) =
   match e with
   | Const c -> pp_const out c
-  | List l ->
-    Format.fprintf
-      out
-      "[@[<hov>%a@]]"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
-      l
   | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) ->
     Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
@@ -108,24 +165,12 @@ let rec pp_expr out ((_, e) : located_expr) =
       v
       pp_expr
       n
-  | If (cond, tbranch, fbranch) ->
-    Format.fprintf
-      out
-      "(if@[<v> %a@,%a@,%a@])"
-      pp_expr
-      cond
-      pp_expr
-      tbranch
-      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
-      fbranch
-  | Lam (args, body) ->
+  | Lam (arg, body) ->
     Format.fprintf
       out
       "(la@[<v>m (%a) %a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@ ") pp_pattern)
-      args
-      pp_expr
-      body
+      pp_pattern arg
+      pp_expr body
   | Match (cond, bs) ->
     let pp_branch out (p, wb, b) =
       Format.fprintf

@@ -12,7 +12,8 @@ and expr =
   | Ap of binder * typed_expr * typed_expr
   | Let of Ast.located_pattern * typed_expr * typed_expr
   | If of typed_expr * typed_expr * typed_expr option
-  | Lam of Ast.located_pattern list * typed_expr
+  | Lam of Ast.located_pattern * typed_expr
+    (* `fun x y => x` is desugared to `fun x => fun y => x` *)
   | Match of typed_expr * (Ast.located_pattern * typed_expr option * typed_expr) list
   | TypeLit of Ast.prim
   | Binding of Ast.ident * typed_expr (* x : T *)
@@ -74,14 +75,12 @@ let rec pp_expr out ((_, e) : located_expr) =
       tbranch
       Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_typed_expr)
       fbranch
-  | Lam (args, body) ->
+  | Lam (arg, body) ->
     Format.fprintf
       out
       "(la@[<v>m (%a)@,%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") Ast.pp_pattern)
-      args
-      pp_typed_expr
-      body
+      Ast.pp_pattern arg
+      pp_typed_expr body
   | Match (cond, bs) ->
     let pp_branch out (p, wb, b) =
       Format.fprintf
@@ -103,7 +102,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       bs
   | Pi (l, r) -> Format.fprintf out "(%a -> %a)" pp_typed_expr l pp_typed_expr r
   | Binding (i, e) -> Format.fprintf out "(%a : %a)" Ast.pp_ident i pp_typed_expr e
-  | TypeLit p -> Format.fprintf out "(%a)" Ast.pp_prim p
+  | TypeLit p -> Format.fprintf out "%a" Ast.pp_prim p
 
 and pp_typed_expr out ((t, e) : typed_expr) =
   match e with

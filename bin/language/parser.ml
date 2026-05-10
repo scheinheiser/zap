@@ -572,7 +572,7 @@ module Parser = struct
           Some (parse_expr l 0 om)
         | _ -> None
       in
-      Lexer.consume l SEMI "Expected ';' after match pattern.";
+      Lexer.consume l ARROW "Expected '->' after match pattern.";
       let e = parse_expr l 0 om in
       p, wb, e
     in

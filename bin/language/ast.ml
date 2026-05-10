@@ -118,7 +118,7 @@ let show_prim = function
   | PBool -> "Bool"
   | PAtom -> "Atom"
   | PUnit -> "Unit"
-  | PUni ix -> Printf.sprintf "U %i" ix
+  | PUni ix -> Printf.sprintf "U%i" ix
 ;;
 
 let get_str = function

@@ -27,7 +27,7 @@ let make_err (e : Error.t) : 'a Base.Or_error.t =
 ;;
 
 let get_level = function
-  | Ast.PUni ix -> ix + 1
+  | Ast.PUni ix -> ix
   | _ -> 0
 ;;
 
@@ -44,8 +44,9 @@ let get_const_type (c : Ast.const) : Ast.prim =
     raise (Error.InternalError "called `get_const_type` on identifier.")
 ;;
 
-let rec replace
-          (subs : (Ast.ident * Typed_ast.typed_expr) list)
+(* β-reduction with a list of ctxtitutions *)
+let rec reduce
+          (ctx : ctx)
           ((ty, e) : Typed_ast.typed_expr)
   : Typed_ast.typed_expr
   =
@@ -54,60 +55,55 @@ let rec replace
     match e with
     | Const (_, Ast.Ident i) ->
       let i = Ast.get_str_combine i in
-      (match
-         List.map (fun (i, t) -> Ast.get_str_combine i, t) subs |> List.assoc_opt i
-       with
+      (match lookup ctx i with
        | None -> te
        | Some e -> snd e)
     | List es ->
-      let es = List.map (fun e -> replace subs e) es in
+      let es = List.map (fun e -> reduce ctx e) es in
       loc, List es
     | Bop (l, op, r) ->
-      let l = replace subs l
-      and r = replace subs r in
+      let l = reduce ctx l
+      and r = reduce ctx r in
       loc, Bop (l, op, r)
     | Ap (b, l, r) ->
-      let l = replace subs l
-      and r = replace subs r in
+      let l = reduce ctx l
+      and r = reduce ctx r in
       loc, Ap (b, l, r)
     | Let (p, e, next) ->
-      let e = replace subs e
-      and next = replace subs next in
+      let e = reduce ctx e
+      and next = reduce ctx next in
       loc, Let (p, e, next)
     | If (c, tr, f) ->
-      let c = replace subs c
-      and tr = replace subs tr
-      and f = Base.Option.map ~f:(fun f -> replace subs f) f in
+      let c = reduce ctx c
+      and tr = reduce ctx tr
+      and f = Base.Option.map ~f:(fun f -> reduce ctx f) f in
       loc, If (c, tr, f)
-    | Lam (ps, b) ->
-      let b = replace subs b in
-      loc, Lam (ps, b)
+    | Lam (p, b) ->
+      let b = reduce ctx b in
+      loc, Lam (p, b)
     | Match (c, bs) ->
       let sub_branch (p, cond, b) =
-        let cond = Base.Option.map ~f:(fun c -> replace subs c) cond
-        and b = replace subs b in
+        let cond = Base.Option.map ~f:(fun c -> reduce ctx c) cond
+        and b = reduce ctx b in
         p, cond, b
       in
-      let c = replace subs c
+      let c = reduce ctx c
       and bs = List.map sub_branch bs in
       loc, Match (c, bs)
     | Binding (i, e) ->
-      let e = replace subs e in
+      let e = reduce ctx e in
       loc, Binding (i, e)
     | Pi (l, r) ->
-      let l = replace subs l
-      and r = replace subs r in
+      let l = reduce ctx l
+      and r = reduce ctx r in
       loc, Pi (l, r)
     | e -> loc, e
   in
   go ty, go e
 ;;
 
-(*NOTE: 
-  there may be an issue with how match/if cases are handled.
-  it means that the identifier (if there is one) takes on the expression of the false branch or the last match branch, which could affect normalisation...
-*)
-let rec unify
+(* checks that a pattern and a given expression can be matched *)
+let rec unify_pat
           (ctx : ctx)
           ((_, p) as p_with_loc : Ast.located_pattern)
           ((((_, t') as t), ((loc, _) as e)) : Typed_ast.typed_expr)
@@ -128,28 +124,28 @@ let rec unify
     (match lookup ctx (Ast.get_str_combine i) with
      | None ->
        make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (Ast.get_str i))
-     | Some e -> unify ctx p_with_loc e)
+     | Some e -> unify_pat ctx p_with_loc e)
   | Ast.PConst (_, Ast.Ident i), _ -> Ok (extend ctx (Ast.get_str_combine i) ~t ~v:e)
   | _, Typed_ast.If (_, tr, fa) ->
-    let* ctx = unify ctx p_with_loc tr in
+    let* ctx = unify_pat ctx p_with_loc tr in
     (match fa with
      | None -> Ok ctx
-     | Some fa -> unify ctx p_with_loc fa)
+     | Some fa -> unify_pat ctx p_with_loc fa)
   | _, Typed_ast.Match (_, bs) ->
     let open Base.Or_error in
     let rec go ctx acc = function
       | [] -> List.rev acc, ctx
       | (_, _, e) :: t ->
-        (match unify ctx p_with_loc e with
+        (match unify_pat ctx p_with_loc e with
          | Error _ as err -> go ctx (err :: acc) t
          | Ok ctx -> go ctx (Ok () :: acc) t)
     in
     let bs, ctx = go ctx [] bs in
     combine_errors bs >>| fun _ -> ctx
   | Ast.PCons (l, r), Typed_ast.List (e :: es) ->
-    let* ctx = unify ctx l e in
+    let* ctx = unify_pat ctx l e in
     let es = t, (loc, Typed_ast.List es) in
-    unify ctx r es
+    unify_pat ctx r es
   | Ast.PConst (_, c), Typed_ast.Const (_, c') ->
     let lc = get_const_type c in
     let rc = get_const_type c' in
@@ -191,11 +187,12 @@ let rec unify
             (Some loc, Printf.sprintf "Expected '%s' constructor, but got '%s'." i i')
         | _ ->
           let@ ctxs =
-            List.map2 (fun p c -> unify ctx p c) ps cons |> Base.Or_error.combine_errors
+            List.map2 (fun p c -> unify_pat ctx p c) ps cons |> Base.Or_error.combine_errors
           in
           List.rev ctxs |> List.hd))
   | _ -> uni_err loc p_with_loc t
 
+(* essentially evaluates expressions to (try and) get the underlying type *)
 and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
   : (Typed_ast.typed_expr * ctx) Base.Or_error.t
   =
@@ -218,10 +215,13 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       (loc, Bop (l, op, r)), ctx
     | Ap (b, l, r) ->
       let* l, _ = normalise ctx l in
-      let@ r, _ = normalise ctx r in
+      let* r, _ = normalise ctx r in
       (match l with
-       (*TODO: handle lambda case*)
-       | l -> (loc, Ap (b, l, r)), ctx)
+       (* we check if it's a lambda to attempt β-reduction. *)
+       | _, (_, Lam (p, b)) ->
+          let@ ctx' = unify_pat ctx p r in
+          (snd @@ reduce ctx' b), ctx
+       | _ -> Ok ((loc, Ap (b, l, r)), ctx))
     | Binding (i, t) ->
       let@ t, _ = normalise ctx t in
       (loc, Binding (i, t)), extend ctx (Ast.get_str_combine i) ~t:(fst t) ~v:(snd t)
@@ -234,7 +234,7 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
         go e
       in
       let* e, _ = normalise ctx e in
-      let* ctx' = unify ctx p last_expr in
+      let* ctx' = unify_pat ctx p last_expr in
       let@ n, _ = normalise ctx' n in
       (loc, Let (p, e, n)), ctx
     | If (c, tr, fa) ->
@@ -248,7 +248,7 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
     | Match (c, bs) ->
       let* c, _ = normalise ctx c in
       let normalise_branch ctx (p, wb, b) =
-        let* ctx = unify ctx p c in
+        let* ctx = unify_pat ctx p c in
         let* wb =
           match wb with
           | None -> Ok wb
@@ -261,10 +261,10 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       in
       let@ bs = List.map (normalise_branch ctx) bs |> Base.Or_error.combine_errors in
       (loc, Match (c, bs)), ctx
-    | Lam (ps, b) ->
+    | Lam (p, b) ->
       (*NOTE: this may cause issues, keep an eye on it *)
       let@ b, _ = normalise ctx b in
-      (loc, Lam (ps, b)), ctx
+      (loc, Lam (p, b)), ctx
     | Pi (l, r) ->
       let* l, ctx' = normalise ctx l in
       let@ r, _ = normalise ctx' r in
@@ -276,6 +276,7 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
   (t, e), ctx
 ;;
 
+(* type inference for expressions *)
 let rec infer (ctx : ctx) ((loc, e) : Ast.located_expr)
   : (Typed_ast.typed_expr * ctx) Base.Or_error.t
   =
@@ -293,29 +294,35 @@ let rec infer (ctx : ctx) ((loc, e) : Ast.located_expr)
     let e = (loc, Typed_ast.TypeLit (get_const_type c)), (loc, Typed_ast.Const (l, c)) in
     Ok (e, ctx)
   | TypeLit l ->
-    let e = (loc, Typed_ast.TypeLit (PUni (get_level l))), (loc, Typed_ast.TypeLit l) in
+    (* the type of Typeₖ is Typeₖ₊₁ *)
+    let ix = 
+      match l with
+      | PUni ix -> ix + 1
+      | _ -> 0
+    in
+    let e = (loc, Typed_ast.TypeLit (PUni ix)), (loc, Typed_ast.TypeLit l) in
     Ok (e, ctx)
   | Binding (i, e) ->
     let@ e, ctx = infer ctx e in
-    (* the binding expression is given the type of the bound type. *)
+    (* the 'binding' expression is given the type of the bound type. *)
     let e' = fst e, (loc, Typed_ast.Binding (i, e)) in
-    e', extend ctx (Ast.get_str_combine i) ~t:(fst e') ~v:(snd e')
     (* the identifier itself is associated with the bound type *)
+    e', extend ctx (Ast.get_str_combine i) ~t:(snd e) ~v:(snd e')
   | Pi (l, r) ->
     let* l, ctx' = infer ctx l in
     let* r, _ = infer ctx' r in
-    (*TODO: factor this out to a function for more precise errors. *)
-    let@ u1, u2 =
-      let open Typed_ast in
-      let* (_, (_, lt)), _ = normalise ctx l in
-      let* (_, (_, rt)), _ = normalise ctx r in
-      match lt, rt with
-      | TypeLit l, TypeLit r -> Ok (get_level l, get_level r)
-      | _ ->
-        make_err
-          (Some loc, Format.asprintf "Expected type, got '%a'." Ast.pp_expr (loc, e))
-    in
+    let* u1 = infer_universe ctx' l in
+    let@ u2 = infer_universe ctx' r in
     let e = (loc, Typed_ast.TypeLit (PUni (Int.max u1 u2))), (loc, Typed_ast.Pi (l, r)) in
     e, ctx
   | _ -> failwith ""
+
+and infer_universe (ctx: ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t =
+  let open Typed_ast in
+  let* ((_, t), ((loc, _) as e)), _ = normalise ctx t in
+  match t with
+  | TypeLit t -> Ok (get_level t)
+  | _ -> 
+    make_err
+      (Some loc, Format.asprintf "Expected type, got '%a'." pp_expr e)
 ;;

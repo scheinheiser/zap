@@ -716,7 +716,7 @@ module Parser = struct
     parse_upper_ident l
   ;;
 
-  let rec parse_import (l : Lexer.t) : Ast.located_import =
+  let rec parse_import (l : Lexer.t) : located_import =
     let s = Lexer.consume_with_pos l ATSIGN "Expected an '@' before 'import' keyword." in
     Lexer.consume l IMPORT "Expected the 'import' keyword.";
     let name = parse_upper_ident l in
@@ -729,7 +729,7 @@ module Parser = struct
     in
     Location.combine s e, (name, cond)
 
-  and parse_import_cond (l : Lexer.t) : Ast.import_cond * Location.t =
+  and parse_import_cond (l : Lexer.t) : import_cond * Location.t =
     let cond_type =
       Lexer.consume_with
         l
@@ -756,7 +756,7 @@ module Parser = struct
               "Expected identifier or comma-separated list of identifiers, but got '%s'."
               (Token.show tok) )
     in
-    if cond_type then Ast.CWith values, e else Ast.CWithout values, e
+    if cond_type then CWith values, e else CWithout values, e
 
   and parse_import_ident (l : Lexer.t) : ident =
     Lexer.consume_with

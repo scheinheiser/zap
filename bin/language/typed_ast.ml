@@ -23,13 +23,6 @@ and expr =
   | Binding of ident * typed_expr (* x : T *)
   | Pi of typed_expr * typed_expr
 
-type import_cond =
-  | CWith of ident list
-  | CWithout of ident list
-
-type located_import = Location.t * import
-and import = ident * import_cond option
-
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
@@ -41,17 +34,11 @@ and tdecl_type =
 type located_definition = Location.t * definition
 
 and definition =
-  bool
-  * ident
-  * typed_expr
-  * located_pattern list
-  * typed_expr option
-  * typed_expr
-
-type top_lvl =
-  | TDef of located_definition
-  | TTyDecl of located_ty_decl
-  | TImport of located_import
+  ident
+  * typed_expr           (* function type *)
+  * located_pattern list (* args *)
+  * typed_expr option    (* optional when-block *)
+  * typed_expr           (* function body *)
 
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
@@ -149,32 +136,6 @@ and pp_typed_expr out ((t, e) : typed_expr) =
   | _ -> Format.fprintf out "(%a %a)" pp_expr t pp_expr e
 ;;
 
-let pp_import_cond out (cond : import_cond) =
-  match cond with
-  | CWith includes ->
-    Format.fprintf
-      out
-      "with (@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
-      includes
-  | CWithout excludes ->
-    Format.fprintf
-      out
-      "without (@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
-      excludes
-;;
-
-let pp_import out ((_, (mod_name, cond)) : located_import) =
-  Format.fprintf
-    out
-    "(import %a @[<hov>%a@])"
-    pp_ident
-    mod_name
-    Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
-    cond
-;;
-
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   match t with
   | Alias _ ->
@@ -222,7 +183,7 @@ let pp_module out (mod_name : ident) = Format.fprintf out "(module %a)" pp_ident
 
 let pp_typed_definition
       out
-      ((_, (_, f, ret, args, when_block, body)) : located_definition)
+      ((_, (f, ret, args, when_block, body)) : located_definition)
   =
   Format.fprintf
     out

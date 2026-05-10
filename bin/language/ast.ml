@@ -31,13 +31,6 @@ and expr =
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
 
-type import_cond =
-  | CWith of ident list
-  | CWithout of ident list
-
-type located_import = Location.t * import
-and import = ident * import_cond option
-
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
@@ -148,32 +141,6 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Pi (l, r) -> Format.fprintf out "(%a -> %a)" pp_expr l pp_expr r
   | Binding (i, e) -> Format.fprintf out "(%a : %a)" pp_ident i pp_expr e
   | TypeLit p -> Format.fprintf out "%a" pp_prim p
-;;
-
-let pp_import_cond out (cond : import_cond) =
-  match cond with
-  | CWith includes ->
-    Format.fprintf
-      out
-      "with (@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
-      includes
-  | CWithout excludes ->
-    Format.fprintf
-      out
-      "without (@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
-      excludes
-;;
-
-let pp_import out ((_, (mod_name, cond)) : located_import) =
-  Format.fprintf
-    out
-    "(import %a @[<hov>%a@])"
-    pp_ident
-    mod_name
-    Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
-    cond
 ;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =

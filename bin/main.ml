@@ -11,7 +11,8 @@ let () =
   let input = "(x: Int) -> x" in
   let l = Lexer.of_string input in
   let res = Parser.parse_expr l 0 (fresh_om ()) in
-  Format.fprintf Format.std_formatter "%a@." Ast.pp_expr res;
+  let res = Desugar.desugar_expr res in
+  Format.fprintf Format.std_formatter "%a@." Desugar.pp_expr res;
   border ();
   (* let res = AR.rename_program res in *)
   match (Typecheck.infer (Typecheck.empty ()) res) with

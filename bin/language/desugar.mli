@@ -29,13 +29,6 @@ and expr =
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
 
-type import_cond =
-  | CWith of ident list
-  | CWithout of ident list
-
-type located_import = Location.t * import
-and import = ident * import_cond option
-
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
@@ -53,13 +46,11 @@ and definition =
 
 and with_block = located_definition list
 
-type top_lvl =
-  | TDef of located_definition
-  | TTyDecl of located_ty_decl
-  | TImport of located_import
-
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
+
+val desugar_expr : Ast.located_expr -> located_expr
+val desugar_program : Ast.program -> program
 
 val pp_pattern : Format.formatter -> located_pattern -> unit
 val pp_expr : Format.formatter -> located_expr -> unit

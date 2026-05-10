@@ -29,13 +29,6 @@ and expr =
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
 
-type import_cond =
-  | CWith of ident list
-  | CWithout of ident list
-
-type located_import = Location.t * import
-and import = ident * import_cond option
-
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
@@ -52,11 +45,6 @@ and definition =
 (* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = located_definition list
-
-type top_lvl =
-  | TDef of located_definition
-  | TTyDecl of located_ty_decl
-  | TImport of located_import
 
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
@@ -77,24 +65,18 @@ let rec desugar_pat ((loc, e) : Ast.located_pattern): located_pattern =
 
 (* desugar a given surface syntax construct to its core grammar equivalent *)
 let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
+  let desugar_abs l r cons =
+    let l = desugar_expr l in
+    let r = desugar_expr r in
+    cons l r
+  in
   match e with
   | Ast.Const c -> loc, Const c
   | Ast.TypeLit t -> loc, TypeLit t
-  | Ast.Binding (i, e) ->
-    let e = desugar_expr e in
-    loc, Binding (i, e)
-  | Ast.Bop (l, op, r) ->
-    let l = desugar_expr l in
-    let r = desugar_expr r in
-    loc, Bop (l, op, r)
-  | Ast.Ap (b, l, r) ->
-    let l = desugar_expr l in
-    let r = desugar_expr r in
-    loc, Ap (b, l, r)
-  | Ast.Pi (l, r) ->
-    let l = desugar_expr l in
-    let r = desugar_expr r in
-    loc, Pi (l, r)
+  | Ast.Binding (i, e) -> loc, Binding (i, desugar_expr e)
+  | Ast.Bop (l, op, r) -> desugar_abs l r (fun l r -> loc, Bop (l, op, r))
+  | Ast.Ap (b, l, r) -> desugar_abs l r (fun l r -> loc, Ap (b, l, r))
+  | Ast.Pi (l, r) -> desugar_abs l r (fun l r -> loc, Pi (l, r))
   | Ast.List es ->
     List.fold_right (fun n acc -> let n = desugar_expr n in loc, Bop (n, Cons, acc)) es (loc, Const (loc, String "empty list"))
   | Ast.Let (p, t, e, n) ->
@@ -130,6 +112,25 @@ let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
       loc, Lam (p, b)
     | ps ->
       List.fold_left (fun acc n -> let n = desugar_pat n in loc, Lam (n, acc)) b (List.rev ps))
+
+let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
+  let desugar_assoc ts = List.map (fun (i, e) -> i, desugar_expr e) ts in
+  match decl with
+  | Ast.Alias t -> loc, (i, Alias (desugar_expr t))
+  | Ast.Variant ts -> loc, (i, Variant (desugar_assoc ts))
+  | Ast.Record ts -> loc, (i, Record (desugar_assoc ts))
+
+let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
+  match d with  
+  | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e)
+  | Ast.Def (i, args, when_block, b, with_block) ->
+    let args = List.map desugar_pat args in
+    let when_block = Base.Option.map ~f:desugar_expr when_block in
+    let b = desugar_expr b in
+    let with_block = List.map desugar_def with_block in
+    loc, Def (i, args, when_block, b, with_block)
+
+let desugar_program ((i, imps, decls, defs) : Ast.program) : program = i, imps, List.map desugar_ty_decl decls, List.map desugar_def defs
 
 (* pretty printing *)
 let rec pp_pattern out ((_, arg) : located_pattern) =
@@ -193,32 +194,6 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Pi (l, r) -> Format.fprintf out "(%a -> %a)" pp_expr l pp_expr r
   | Binding (i, e) -> Format.fprintf out "(%a : %a)" pp_ident i pp_expr e
   | TypeLit p -> Format.fprintf out "%a" pp_prim p
-;;
-
-let pp_import_cond out (cond : import_cond) =
-  match cond with
-  | CWith includes ->
-    Format.fprintf
-      out
-      "with (@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
-      includes
-  | CWithout excludes ->
-    Format.fprintf
-      out
-      "without (@[<hov>%a@])"
-      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
-      excludes
-;;
-
-let pp_import out ((_, (mod_name, cond)) : located_import) =
-  Format.fprintf
-    out
-    "(import %a @[<hov>%a@])"
-    pp_ident
-    mod_name
-    Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
-    cond
 ;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =

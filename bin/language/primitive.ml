@@ -47,6 +47,14 @@ type binop =
   | User_op of ident
 [@@ocamlformat "disable"]
 
+type located_import = Location.t * import
+and import = ident * import_cond option
+
+and import_cond =
+  | CWith of ident list
+  | CWithout of ident list
+
+
 (* utils *)
 let show_prim = function
   | PInt -> "Int"
@@ -113,4 +121,30 @@ let pp_binop out (b : binop) =
     | User_op o -> Format.asprintf "%a" pp_ident o
   in
   Format.fprintf out "%s" op
+;;
+
+let pp_import_cond out (cond : import_cond) =
+  match cond with
+  | CWith includes ->
+    Format.fprintf
+      out
+      "with (@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
+      includes
+  | CWithout excludes ->
+    Format.fprintf
+      out
+      "without (@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_ident)
+      excludes
+;;
+
+let pp_import out ((_, (mod_name, cond)) : located_import) =
+  Format.fprintf
+    out
+    "(import %a @[<hov>%a@])"
+    pp_ident
+    mod_name
+    Format.(pp_print_option ~none:(fun out () -> fprintf out "()") pp_import_cond)
+    cond
 ;;

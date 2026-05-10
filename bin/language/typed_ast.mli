@@ -23,13 +23,6 @@ and expr =
   | Binding of ident * typed_expr (* x : T *)
   | Pi of typed_expr * typed_expr
 
-type import_cond =
-  | CWith of ident list
-  | CWithout of ident list
-
-type located_import = Location.t * import
-and import = ident * import_cond option
-
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
@@ -41,17 +34,11 @@ and tdecl_type =
 type located_definition = Location.t * definition
 
 and definition =
-  bool
-  * ident
-  * typed_expr
-  * located_pattern list
-  * typed_expr option
-  * typed_expr
-
-type top_lvl =
-  | TDef of located_definition
-  | TTyDecl of located_ty_decl
-  | TImport of located_import
+  ident
+  * typed_expr           (* function type *)
+  * located_pattern list (* args *)
+  * typed_expr option    (* optional when-block *)
+  * typed_expr           (* function body *)
 
 type program =
   ident * located_import list * located_ty_decl list * located_definition list

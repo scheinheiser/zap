@@ -45,6 +45,13 @@ type binop =
   | Cons
   | User_op of ident
 
+type located_import = Location.t * import
+and import = ident * import_cond option
+
+and import_cond =
+  | CWith of ident list
+  | CWithout of ident list
+
 val show_prim : prim -> string
 val get_str : ident -> string
 val get_str_combine : ident -> string
@@ -53,3 +60,5 @@ val pp_ident : Format.formatter -> ident -> unit
 val pp_prim : Format.formatter -> prim -> unit
 val pp_const : Format.formatter -> located_const -> unit
 val pp_binop : Format.formatter -> binop -> unit
+val pp_import_cond : Format.formatter -> import_cond -> unit
+val pp_import : Format.formatter -> located_import -> unit

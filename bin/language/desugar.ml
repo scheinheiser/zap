@@ -54,7 +54,7 @@ type program =
 (* this makes it easier to check if patterns match, making pattern matching on function arguments desugarable *)
 type pattern_style =
   | SWild
-  | SConst
+  | SConst of located_const
   | SCons of pattern_style * pattern_style
   | SCtor of ident * pattern_style list
   | STuple of pattern_style list
@@ -62,7 +62,7 @@ type pattern_style =
 let rec pattern_to_style ((_, p) : located_pattern): pattern_style =
   match p with
   | PWild -> SWild
-  | PConst _ -> SConst
+  | PConst c -> SConst c
   | PCons (l, r) -> SCons (pattern_to_style l, pattern_to_style r)
   | PCtor (i, ps) -> SCtor (i, List.map pattern_to_style ps)
   | PTuple t -> STuple (List.map pattern_to_style t)
@@ -70,7 +70,18 @@ let rec pattern_to_style ((_, p) : located_pattern): pattern_style =
 let rec equal_style (l : pattern_style) (r : pattern_style) : bool =
   match l, r with
   | SWild, SWild -> true
-  | SConst, SConst -> true
+  | SConst (_, l), SConst (_, r) ->
+    (match l, r with
+    | Int l, Int r -> l = r 
+    | Float l, Float r -> l = r 
+    | String l, String r -> l = r
+    | Char l, Char r -> l = r 
+    | Bool l, Bool r -> l = r
+    | Unit, Unit -> true
+    | Atom l, Atom r | Udc l, Udc r -> get_str_combine l = get_str_combine r
+    | Ident _, _ -> true
+    | _, Ident _ -> true
+    | _ -> false)
   | SCons (ll, lr), SCons (rl, rr) -> equal_style ll lr && equal_style rl rr
   | SCtor (li, lps), SCtor (ri, rps) when (List.length lps = List.length rps) && (get_str_combine li = get_str_combine ri) -> 
     List.map2 equal_style lps rps |>
@@ -133,13 +144,13 @@ let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
     let t = desugar_expr t in
     let branches =
       let tp = loc, PConst (loc, Bool true) in
-      let tb = [(tp, None, t)] in
+      let tb = (tp, None, t) in
       match f with
-      | None -> tb
+      | None -> [tb]
       | Some f ->
         let f = desugar_expr f in
         let fp = loc, PConst (loc, Bool false) in
-        tb @ [(fp, None, f)]
+        [tb; (fp, None, f)]
     in loc, Match (c, branches)
   | Ast.Match (c, branches) ->
     let c = desugar_expr c in
@@ -220,7 +231,7 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
           let b = ((loc, PTuple args), when_block, body) in
           b :: branch_acc, List.flatten (wb :: wb_acc)
         | (_, (_, args, when_block, b, with_block)) :: ds ->
-          (* map f (x :: xs) : ... = ... ==> | (f, (x :: xs)) when ... => ... *)
+          (* f x₁ .. xₙ : ... = ... ==> | (x₁, .., xₙ) when ... => ... *)
           let branch = ((loc, PTuple args), when_block, b) in
           construct_branches ds (branch :: branch_acc) (with_block :: wb_acc) (* with_blocks are preserved to prevent any undefined variable errors *)
       in

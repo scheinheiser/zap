@@ -51,7 +51,7 @@ and with_block = located_definition list
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
-(* this is to allow for function-level pattern matching *)
+(* this makes it easier to check if patterns match, making pattern matching on function arguments desugarable *)
 type pattern_style =
   | SWild
   | SConst
@@ -163,7 +163,6 @@ let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   | Ast.Variant ts -> loc, (i, Variant (desugar_assoc ts))
   | Ast.Record ts -> loc, (i, Record (desugar_assoc ts))
 
-(*TODO: turn function-level pattern matching into match expressions *)
 let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
   match d with  
   | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e)
@@ -174,6 +173,19 @@ let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
     let with_block = List.map desugar_def with_block in
     loc, Def (i, args, when_block, b, with_block)
 
+(*
+  this desugars function-level pattern matching in the style of:
+    dec map : (A -> B) -> [A] -> [B]
+    def map _ [] := []
+    def map f (x :: xs) := f x :: map f xs
+
+  turning it to:
+    dec map : (A -> B) -> [A] -> [B]
+    def map __match__1 __match__2 :=
+      match (__match__1, __match__2) to
+      | (_, []) => []
+      | (f, x :: xs) => f x :: map f xs
+*)
 and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definition list) =
   let defs', matches =
     let args_as_styles = List.map pattern_to_style args in
@@ -186,10 +198,11 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
         let equal_arg_c = List.length args = List.length args' in
         if equal_i && equal_arg_c
         then (
-          (* if the functions have the same identifier and argument count, we check that their argument styles match *)
+          (* if the functions have the same identifier and argument count, we check that their argument styles match. *)
           let args'' = List.map pattern_to_style args in
           if List.map2 ( $= ) args'' args_as_styles |> List.fold_left ( && ) true
-          then group_defs ds failed_acc (success :: acc)
+          (* any successful matches are removed from the definition list so that they aren't checked again. *)
+          then group_defs ds failed_acc (success :: acc) 
           else group_defs ds (failed :: failed_acc) acc
         )
         else group_defs ds (failed :: failed_acc) acc
@@ -205,17 +218,19 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
         match ds with
         | [] -> 
           let b = ((loc, PTuple args), when_block, body) in
-          b :: branch_acc, List.flatten wb_acc
+          b :: branch_acc, List.flatten (wb :: wb_acc)
         | (_, (_, args, when_block, b, with_block)) :: ds ->
+          (* map f (x :: xs) : ... = ... ==> | (f, (x :: xs)) when ... => ... *)
           let branch = ((loc, PTuple args), when_block, b) in
-          construct_branches ds (branch :: branch_acc) (with_block :: wb_acc)
+          construct_branches ds (branch :: branch_acc) (with_block :: wb_acc) (* with_blocks are preserved to prevent any undefined variable errors *)
       in
       let c = loc, Tuple (List.map (fun i -> loc, Const i) match_idents) in
       let branches, wb = construct_branches matches [] [] in
       (loc, Match (c, branches)), wb
     in
+    (* turns the args of the top-level function to the placeholder variables *)
     let args = List.map (fun i -> loc, PConst i) match_idents in
-    let new_def = loc, (Def (i, args, when_block, new_body, wb @ with_block)) in
+    let new_def = loc, (Def (i, args, when_block, new_body, with_block)) in
     new_def, defs'
 
 let desugar_program ((i, imps, decls, defs) : Ast.program) : program = 

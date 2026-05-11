@@ -10,11 +10,13 @@ and pattern =
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern list
   | PList of located_pattern list
+  | PTuple of located_pattern list
 
 type located_expr = Location.t * expr
 
 and expr =
   | List of located_expr list
+  | Tuple of located_expr list
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)

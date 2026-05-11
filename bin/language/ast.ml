@@ -10,11 +10,13 @@ and pattern =
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern list
   | PList of located_pattern list
+  | PTuple of located_pattern list
 
 type located_expr = Location.t * expr
 
 and expr =
   | List of located_expr list
+  | Tuple of located_expr list
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
@@ -66,6 +68,12 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_pattern)
       ps
+  | PTuple ps ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
+      ps
   | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
   | PCtor (i, v) ->
     Format.fprintf
@@ -86,6 +94,12 @@ let rec pp_expr out ((_, e) : located_expr) =
       "[@[<hov>%a@]]"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@ ") pp_expr)
       l
+  | Tuple t ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_expr)
+      t
   | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) ->
     Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r

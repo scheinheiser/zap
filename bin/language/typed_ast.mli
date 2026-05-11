@@ -8,6 +8,7 @@ and pattern =
   | PConst of located_const
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern list
+  | PTuple of located_pattern list
 
 type typed_expr = located_expr * located_expr
 and located_expr = Location.t * expr
@@ -16,6 +17,7 @@ and expr =
   | Const of located_const
   | Bop of typed_expr * binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
+  | Tuple of typed_expr list
   | Let of located_pattern * typed_expr * typed_expr
   | Lam of located_pattern * typed_expr
   | Match of typed_expr * (located_pattern * typed_expr option * typed_expr) list

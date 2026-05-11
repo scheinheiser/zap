@@ -93,6 +93,9 @@ end = struct
       in
       let v, env = rename_list ~f:rename_pattern env v in
       (loc, PCtor (i, v)), env
+    | PTuple ps -> 
+      let ps, env = rename_list ~f:rename_pattern env ps in
+      (loc, PTuple ps), env
   ;;
 
   let rec rename_expr (env : ident VM.t) ((loc, expr) : located_expr)
@@ -120,6 +123,9 @@ end = struct
       (match Base.List.Assoc.find builtins ~equal:Base.String.( = ) i with
        | Some b -> (loc, Ap (b, l', r')), env'
        | None -> (loc, Ap (fresh_binder (), l', r')), env'')
+    | Tuple es ->
+      let es, env = rename_list ~f:rename_expr env es in
+      (loc, Tuple es), env
     | Let (p, t, expr, n) ->
       let rec collect_idents acc = function
         | _, PConst (_, Ident i) -> i :: acc

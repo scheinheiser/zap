@@ -9,6 +9,7 @@ and pattern =
   | PConst of located_const
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern list
+  | PTuple of located_pattern list
 
 type located_expr = Location.t * expr
 
@@ -16,6 +17,7 @@ and expr =
   | Bop of located_expr * binop * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
+  | Tuple of located_expr list
   | Let of
       located_pattern
       * located_expr option
@@ -49,6 +51,43 @@ and with_block = located_definition list
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
+(* this is to allow for function-level pattern matching *)
+type pattern_style =
+  | SWild
+  | SConst
+  | SCons of pattern_style * pattern_style
+  | SCtor of ident * pattern_style list
+  | STuple of pattern_style list
+
+let rec pattern_to_style ((_, p) : located_pattern): pattern_style =
+  match p with
+  | PWild -> SWild
+  | PConst _ -> SConst
+  | PCons (l, r) -> SCons (pattern_to_style l, pattern_to_style r)
+  | PCtor (i, ps) -> SCtor (i, List.map pattern_to_style ps)
+  | PTuple t -> STuple (List.map pattern_to_style t)
+
+let rec equal_style (l : pattern_style) (r : pattern_style) : bool =
+  match l, r with
+  | SWild, SWild -> true
+  | SConst, SConst -> true
+  | SCons (ll, lr), SCons (rl, rr) -> equal_style ll lr && equal_style rl rr
+  | SCtor (li, lps), SCtor (ri, rps) when (List.length lps = List.length rps) && (get_str_combine li = get_str_combine ri) -> 
+    List.map2 equal_style lps rps |>
+    List.fold_left (fun acc n -> acc && n) true
+  | STuple l, STuple r when List.length l = List.length r ->
+    List.map2 equal_style l r |>
+    List.fold_left ( && ) true
+  | _ -> false
+and ( $= ) l r = equal_style l r
+
+(* desugaring *)
+let fresh_pattern_ident =
+  let i = ref (-1) in
+  fun () ->
+    incr i;
+    GStr ("__match__", !i)
+
 let rec desugar_pat ((loc, e) : Ast.located_pattern): located_pattern = 
   match e with
   | Ast.PWild -> loc, PWild
@@ -61,7 +100,9 @@ let rec desugar_pat ((loc, e) : Ast.located_pattern): located_pattern =
     let ps = List.map desugar_pat ps in
     loc, PCtor (i, ps)
   | Ast.PList ps ->
-    List.fold_right (fun n acc -> let n = desugar_pat n in loc, PCons (n, acc)) ps (loc, PConst (loc, String "empty list"))
+    List.fold_right (fun n acc -> let n = desugar_pat n in loc, PCons (n, acc)) ps (loc, PConst (loc, Udc (Str "[]")))
+  | Ast.PTuple ps ->
+    loc, PTuple (List.map desugar_pat ps)
 
 (* desugar a given surface syntax construct to its core grammar equivalent *)
 let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
@@ -78,7 +119,8 @@ let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
   | Ast.Ap (b, l, r) -> desugar_abs l r (fun l r -> loc, Ap (b, l, r))
   | Ast.Pi (l, r) -> desugar_abs l r (fun l r -> loc, Pi (l, r))
   | Ast.List es ->
-    List.fold_right (fun n acc -> let n = desugar_expr n in loc, Bop (n, Cons, acc)) es (loc, Const (loc, String "empty list"))
+    List.fold_right (fun n acc -> let n = desugar_expr n in loc, Bop (n, Cons, acc)) es (loc, Const (loc, Udc (Str "[]")))
+  | Ast.Tuple es -> loc, Tuple (List.map desugar_expr es)
   | Ast.Let (p, t, e, n) ->
     let p = desugar_pat p in
     let t = Base.Option.map ~f:desugar_expr t in
@@ -86,6 +128,7 @@ let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
     let n = desugar_expr n in
     loc, Let (p, t, e, n)
   | Ast.If (c, t, f) ->
+    (* if statements are converted into 1/2 branch match statements *)
     let c = desugar_expr c in
     let t = desugar_expr t in
     let branches =
@@ -120,6 +163,7 @@ let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   | Ast.Variant ts -> loc, (i, Variant (desugar_assoc ts))
   | Ast.Record ts -> loc, (i, Record (desugar_assoc ts))
 
+(*TODO: turn function-level pattern matching into match expressions *)
 let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
   match d with  
   | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e)
@@ -130,7 +174,63 @@ let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
     let with_block = List.map desugar_def with_block in
     loc, Def (i, args, when_block, b, with_block)
 
-let desugar_program ((i, imps, decls, defs) : Ast.program) : program = i, imps, List.map desugar_ty_decl decls, List.map desugar_def defs
+and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definition list) =
+  let defs', matches =
+    let args_as_styles = List.map pattern_to_style args in
+    let rec group_defs ds failed_acc acc =
+      match ds with
+      | (_, Dec _) as d :: ds -> group_defs ds (d :: failed_acc) acc
+      | (loc, Def (i', args', wb, b, wb')) as failed :: ds ->
+        let success = (loc, (i', args', wb, b, wb')) in
+        let equal_i = get_str_combine i = get_str_combine i' in
+        let equal_arg_c = List.length args = List.length args' in
+        if equal_i && equal_arg_c
+        then (
+          (* if the functions have the same identifier and argument count, we check that their argument styles match *)
+          let args'' = List.map pattern_to_style args in
+          if List.map2 ( $= ) args'' args_as_styles |> List.fold_left ( && ) true
+          then group_defs ds failed_acc (success :: acc)
+          else group_defs ds (failed :: failed_acc) acc
+        )
+        else group_defs ds (failed :: failed_acc) acc
+      | [] -> failed_acc, acc
+    in group_defs defs [] []
+  in
+  match matches with
+  | [] -> (loc, Def (i, args, when_block, body, wb)), defs
+  | _ ->
+    let match_idents = List.map (fun _ -> loc, Ident (fresh_pattern_ident ())) args in
+    let new_body, with_block =
+      let rec construct_branches ds branch_acc wb_acc = 
+        match ds with
+        | [] -> 
+          let b = ((loc, PTuple args), when_block, body) in
+          b :: branch_acc, List.flatten wb_acc
+        | (_, (_, args, when_block, b, with_block)) :: ds ->
+          let branch = ((loc, PTuple args), when_block, b) in
+          construct_branches ds (branch :: branch_acc) (with_block :: wb_acc)
+      in
+      let c = loc, Tuple (List.map (fun i -> loc, Const i) match_idents) in
+      let branches, wb = construct_branches matches [] [] in
+      (loc, Match (c, branches)), wb
+    in
+    let args = List.map (fun i -> loc, PConst i) match_idents in
+    let new_def = loc, (Def (i, args, when_block, new_body, wb @ with_block)) in
+    new_def, defs'
+
+let desugar_program ((i, imps, decls, defs) : Ast.program) : program = 
+  let defs = 
+    let defs = List.map desugar_def defs in
+    let rec without_matches ds acc =
+      match ds with
+      | [] -> acc
+      | (_, Dec _) as d :: ds -> without_matches ds (d :: acc)
+      | (loc, Def (i, args, when_block, body, with_block)) :: ds ->
+        let d, ds = desugar_flpm (loc, (i, args, when_block, body, with_block)) ds in
+        without_matches ds (d :: acc)
+    in without_matches defs []
+  in
+  i, imps, List.map desugar_ty_decl decls, defs
 
 (* pretty printing *)
 let rec pp_pattern out ((_, arg) : located_pattern) =
@@ -146,6 +246,12 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
       i
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern)
       v
+  | PTuple ps ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
+      ps
 ;;
 
 let rec pp_expr out ((_, e) : located_expr) =
@@ -154,6 +260,12 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) ->
     Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
+  | Tuple t ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_expr)
+      t
   | Let (p, ty, v, n) ->
     Format.fprintf
       out
@@ -176,7 +288,7 @@ let rec pp_expr out ((_, e) : located_expr) =
     let pp_branch out (p, wb, b) =
       Format.fprintf
         out
-        "(wh@[<v>en %a@,%a %a@])"
+        "(wh@[<v>en %a@,(%a %a)@])"
         Format.(pp_print_option ~none:(fun out () -> fprintf out "true") pp_expr)
         wb
         pp_pattern

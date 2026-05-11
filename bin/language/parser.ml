@@ -557,7 +557,7 @@ module Parser = struct
 
   and parse_lam (l : Lexer.t) (om : operator_map) (s : Location.t) : Ast.located_expr =
     let args = parse_args l in
-    Lexer.consume l F_ARROW "Expected '=>' after lambda arguments.";
+    Lexer.consume l ARROW "Expected '->' after lambda arguments.";
     let body = parse_expr l 0 om in
     Location.combine s (Lexer.current_pos l), Ast.Lam (args, body)
 
@@ -573,7 +573,7 @@ module Parser = struct
           Some (parse_expr l 0 om)
         | _ -> None
       in
-      Lexer.consume l ARROW "Expected '->' after match pattern.";
+      Lexer.consume l F_ARROW "Expected '=>' after match pattern.";
       let e = parse_expr l 0 om in
       p, wb, e
     in

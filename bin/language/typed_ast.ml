@@ -8,6 +8,7 @@ and pattern =
   | PConst of located_const
   | PCons of located_pattern * located_pattern
   | PCtor of ident * located_pattern list
+  | PTuple of located_pattern list
 
 type typed_expr = located_expr * located_expr
 and located_expr = Location.t * expr
@@ -16,6 +17,7 @@ and expr =
   | Const of located_const
   | Bop of typed_expr * binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
+  | Tuple of typed_expr list
   | Let of located_pattern * typed_expr * typed_expr
   | Lam of located_pattern * typed_expr
   | Match of typed_expr * (located_pattern * typed_expr option * typed_expr) list
@@ -49,6 +51,8 @@ let rec show_pat = function
   | _, PCons (l, r) -> Printf.sprintf "%s :: %s" (show_pat l) (show_pat r)
   | _, PCtor (n, p) ->
     Format.asprintf "%a %s" pp_ident n (List.map show_pat p |> String.concat " ")
+  | _, PTuple ps ->
+    Printf.sprintf "(%s)" (List.map show_pat ps |> String.concat ", ")
   | _, PConst (_, c) ->
     (match c with
      | Ident i | Udc i | Atom i -> Format.asprintf "%a" pp_ident i
@@ -74,6 +78,12 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
       i
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out " ") pp_pattern)
       v
+  | PTuple ps ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
+      ps
 ;;
 
 let rec pp_expr out ((_, e) : located_expr) =
@@ -91,6 +101,12 @@ let rec pp_expr out ((_, e) : located_expr) =
       l
       pp_typed_expr
       r
+  | Tuple t ->
+    Format.fprintf
+      out
+      "(@[<hov>%a@])"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_typed_expr)
+      t
   | Let (p, v, n) ->
     Format.fprintf
       out

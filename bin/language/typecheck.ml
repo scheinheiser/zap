@@ -1,6 +1,5 @@
 open Util
 open Primitive
-
 module C = Map.Make (String)
 
 let ( let* ) = Base.Or_error.( >>= )
@@ -47,11 +46,7 @@ let get_const_type (c : const) : prim =
 ;;
 
 (* β-reduction *)
-let rec reduce
-          (ctx : ctx)
-          ((ty, e) : Typed_ast.typed_expr)
-  : Typed_ast.typed_expr
-  =
+let rec reduce (ctx : ctx) ((ty, e) : Typed_ast.typed_expr) : Typed_ast.typed_expr =
   let go ((loc, e) as te) =
     let open Typed_ast in
     match e with
@@ -116,8 +111,7 @@ let rec unify_pat
   match p, t' with
   | _, Typed_ast.Const (_, Ident i) ->
     (match lookup ctx (get_str_combine i) with
-     | None ->
-       make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
+     | None -> make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
      | Some e -> unify_pat ctx p_with_loc e)
   | Typed_ast.PConst (_, Ident i), _ -> Ok (extend ctx (get_str_combine i) ~t ~v:e)
   | _, Typed_ast.Match (_, bs) ->
@@ -138,8 +132,8 @@ let rec unify_pat
     let lc = get_const_type c in
     let rc = get_const_type c' in
     if lc = rc then Ok ctx else uni_err loc p_with_loc t
-  | Typed_ast.PConst (_, c), Typed_ast.Bop (_, _, _) | Typed_ast.PConst (_, c), Typed_ast.Ap (_, _, _)
-    ->
+  | Typed_ast.PConst (_, c), Typed_ast.Bop (_, _, _)
+  | Typed_ast.PConst (_, c), Typed_ast.Ap (_, _, _) ->
     let _ = get_const_type c in
     failwith "finish normalise! for equality function"
   | Typed_ast.PCtor (i, ps), Typed_ast.Ap (_, l, r) ->
@@ -169,13 +163,15 @@ let rec unify_pat
          List.rev @@ (r :: go [] l)
        in
        (match () with
-        | _ when List.length cons <> List.length ps -> failwith "" (*TODO:something something empty variants *)
+        | _ when List.length cons <> List.length ps ->
+          failwith "" (*TODO:something something empty variants *)
         | _ when i <> i' ->
           make_err
             (Some loc, Printf.sprintf "Expected '%s' constructor, but got '%s'." i i')
         | _ ->
           let@ ctxs =
-            List.map2 (fun p c -> unify_pat ctx p c) ps cons |> Base.Or_error.combine_errors
+            List.map2 (fun p c -> unify_pat ctx p c) ps cons
+            |> Base.Or_error.combine_errors
           in
           List.rev ctxs |> List.hd))
   | _ -> uni_err loc p_with_loc t
@@ -203,8 +199,8 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       (match l with
        (* we check if it's a lambda to attempt β-reduction. *)
        | _, (_, Lam (p, b)) ->
-          let@ ctx' = unify_pat ctx p r in
-          (snd @@ reduce ctx' b), ctx
+         let@ ctx' = unify_pat ctx p r in
+         snd @@ reduce ctx' b, ctx
        | _ -> Ok ((loc, Ap (b, l, r)), ctx))
     | Binding (i, t) ->
       let@ t, _ = normalise ctx t in
@@ -260,8 +256,7 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
   | Const (l, Ident i) ->
     let i' = get_str_combine i in
     (match lookup_ty ctx i' with
-     | None ->
-       make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
+     | None -> make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
      | Some t ->
        let e = t, (loc, Typed_ast.Const (l, Ident i)) in
        Ok (e, ctx))
@@ -270,7 +265,7 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
     Ok (e, ctx)
   | TypeLit l ->
     (* the type of Typeₖ is Typeₖ₊₁ *)
-    let ix = 
+    let ix =
       match l with
       | PUni ix -> ix + 1
       | _ -> 0
@@ -292,12 +287,10 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
     e, ctx
   | _ -> failwith ""
 
-and infer_universe (ctx: ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t =
+and infer_universe (ctx : ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t =
   let open Typed_ast in
   let* ((_, t), ((loc, _) as e)), _ = normalise ctx t in
   match t with
   | TypeLit t -> Ok (get_level t)
-  | _ -> 
-    make_err
-      (Some loc, Format.asprintf "Expected type, got '%a'." pp_expr e)
+  | _ -> make_err (Some loc, Format.asprintf "Expected type, got '%a'." pp_expr e)
 ;;

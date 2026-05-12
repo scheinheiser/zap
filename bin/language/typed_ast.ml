@@ -37,10 +37,10 @@ type located_definition = Location.t * definition
 
 and definition =
   ident
-  * typed_expr           (* function type *)
+  * typed_expr (* function type *)
   * located_pattern list (* args *)
-  * typed_expr option    (* optional when-block *)
-  * typed_expr           (* function body *)
+  * typed_expr option (* optional when-block *)
+  * typed_expr (* function body *)
 
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
@@ -51,8 +51,7 @@ let rec show_pat = function
   | _, PCons (l, r) -> Printf.sprintf "%s :: %s" (show_pat l) (show_pat r)
   | _, PCtor (n, p) ->
     Format.asprintf "%a %s" pp_ident n (List.map show_pat p |> String.concat " ")
-  | _, PTuple ps ->
-    Printf.sprintf "(%s)" (List.map show_pat ps |> String.concat ", ")
+  | _, PTuple ps -> Printf.sprintf "(%s)" (List.map show_pat ps |> String.concat ", ")
   | _, PConst (_, c) ->
     (match c with
      | Ident i | Udc i | Atom i -> Format.asprintf "%a" pp_ident i
@@ -92,15 +91,7 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Ap (_, f, arg) ->
     Format.fprintf out "(@[<hov>%a@ %a@])" pp_typed_expr f pp_typed_expr arg
   | Bop (l, op, r) ->
-    Format.fprintf
-      out
-      "(@[<hov>%a@ %a@ %a@])"
-      pp_binop
-      op
-      pp_typed_expr
-      l
-      pp_typed_expr
-      r
+    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_typed_expr l pp_typed_expr r
   | Tuple t ->
     Format.fprintf
       out
@@ -118,11 +109,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       pp_typed_expr
       n
   | Lam (arg, body) ->
-    Format.fprintf
-      out
-      "(la@[<v>m (%a)@,%a@])"
-      pp_pattern arg
-      pp_typed_expr body
+    Format.fprintf out "(la@[<v>m (%a)@,%a@])" pp_pattern arg pp_typed_expr body
   | Match (cond, bs) ->
     let pp_branch out (p, wb, b) =
       Format.fprintf
@@ -154,14 +141,7 @@ and pp_typed_expr out ((t, e) : typed_expr) =
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   match t with
-  | Alias _ ->
-    Format.fprintf
-      out
-      "(ty@[<v>pe %a %a@])"
-      pp_ident
-      i
-      pp_tdecl_type
-      t
+  | Alias _ -> Format.fprintf out "(ty@[<v>pe %a %a@])" pp_ident i pp_tdecl_type t
   | _ -> Format.fprintf out "(ty@[<v>pe %a@,%a@])" pp_ident i pp_tdecl_type t
 
 and pp_tdecl_type out (t : tdecl_type) =
@@ -197,10 +177,7 @@ let pp_when_block out (when_block : typed_expr option) =
 
 let pp_module out (mod_name : ident) = Format.fprintf out "(module %a)" pp_ident mod_name
 
-let pp_typed_definition
-      out
-      ((_, (f, ret, args, when_block, body)) : located_definition)
-  =
+let pp_typed_definition out ((_, (f, ret, args, when_block, body)) : located_definition) =
   Format.fprintf
     out
     "(de@[<v>f %a (%a)@,(%a)@,%a@,%a@])"

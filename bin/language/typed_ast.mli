@@ -37,17 +37,16 @@ type located_definition = Location.t * definition
 
 and definition =
   ident
-  * typed_expr           (* function type *)
+  * typed_expr (* function type *)
   * located_pattern list (* args *)
-  * typed_expr option    (* optional when-block *)
-  * typed_expr           (* function body *)
+  * typed_expr option (* optional when-block *)
+  * typed_expr (* function body *)
 
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
 (* utils *)
 val show_pat : located_pattern -> string
-
 val pp_pattern : Format.formatter -> located_pattern -> unit
 val pp_expr : Format.formatter -> located_expr -> unit
 val pp_typed_expr : Format.formatter -> typed_expr -> unit

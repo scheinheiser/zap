@@ -93,7 +93,7 @@ end = struct
       in
       let v, env = rename_list ~f:rename_pattern env v in
       (loc, PCtor (i, v)), env
-    | PTuple ps -> 
+    | PTuple ps ->
       let ps, env = rename_list ~f:rename_pattern env ps in
       (loc, PTuple ps), env
   ;;

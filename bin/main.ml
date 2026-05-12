@@ -14,8 +14,9 @@ let () =
   let res = Desugar.desugar_program res in
   Printf.printf "%s\n" input;
   border ();
-  Format.fprintf Format.std_formatter "%a@." Desugar.pp_program res;
-  (* let res = AR.rename_program res in *)
-  (* match (Typecheck.infer (Typecheck.empty ()) res) with *)
-  (* | Error e -> print_endline (Base.Error.to_string_hum e) *)
-  (* | Ok (r, _) -> Typed_ast.pp_typed_expr Format.std_formatter r *)
+  Format.fprintf Format.std_formatter "%a@." Desugar.pp_program res
+;;
+(* let res = AR.rename_program res in *)
+(* match (Typecheck.infer (Typecheck.empty ()) res) with *)
+(* | Error e -> print_endline (Base.Error.to_string_hum e) *)
+(* | Ok (r, _) -> Typed_ast.pp_typed_expr Format.std_formatter r *)

@@ -420,11 +420,18 @@ module Parser = struct
       let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
       Location.combine s e, Ast.List es
     | s, LPAREN ->
-      let _, expr = parse_expr l 0 om in
-      let end' =
-        Lexer.consume_with_pos l RPAREN "Expected ')' to end grouped expression."
-      in
-      Location.combine s end', expr
+      let loc, expr = parse_expr l 0 om in
+      (match Lexer.current l with
+      | e, RPAREN ->
+        Lexer.skip ~am:1 l;
+        Location.combine s e, expr
+      | _, COMMA ->
+        Lexer.skip ~am:1 l;
+        let es = Lexer.separated_list l COMMA (fun l -> parse_expr l 0 om) in
+        let e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple expression." in
+        Location.combine s e, (Ast.Tuple ((loc, expr) :: es))
+      | pos, tok ->
+        Error.report_err (Some pos, Printf.sprintf "Expected either ')' to end grouped expression or ',' to start tuple expression, but got '%s'." (Token.show tok)))
     | s, KOP ->
       Lexer.consume l LPAREN "Expected '(' after 'op' keyword.";
       let pos, next = Lexer.advance l in
@@ -472,8 +479,7 @@ module Parser = struct
       | GTE -> Ast.Bop (left, GreaterE, parse_expr l lbp om)
       | AND -> Ast.Bop (left, And, parse_expr l lbp om)
       | OR -> Ast.Bop (left, Or, parse_expr l lbp om)
-      | OP o ->
-        Ast.Bop (left, User_op (Str o), parse_expr l (get_bp_with_fixity o om) om)
+      | OP o -> Ast.Bop (left, User_op (Str o), parse_expr l (get_bp_with_fixity o om) om)
       | ARROW -> Ast.Pi (left, parse_expr l (lbp - 1) om)
       | INT i -> Ast.Ap (0, left, (s, Ast.Const (s, Int i)))
       | FLOAT f -> Ast.Ap (0, left, (s, Ast.Const (s, Float f)))
@@ -501,8 +507,7 @@ module Parser = struct
       | TTYPE ->
         (match Lexer.current l with
          | e, INT i -> Ast.Ap (0, left, (Location.combine s e, Ast.TypeLit (PUni i)))
-         | _ ->
-           Ast.Ap (0, left, (s, Ast.TypeLit (PUni 0))) (* x : Type => x : Type 0 *))
+         | _ -> Ast.Ap (0, left, (s, Ast.TypeLit (PUni 0))) (* x : Type => x : Type 0 *))
       | LBRACK ->
         let es = Lexer.separated_list l SEMI (fun e -> parse_expr e 0 om) in
         let e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in

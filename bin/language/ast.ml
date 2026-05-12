@@ -159,14 +159,7 @@ let rec pp_expr out ((_, e) : located_expr) =
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   match t with
-  | Alias _ ->
-    Format.fprintf
-      out
-      "(ty@[<v>pe %a %a@])"
-      pp_ident
-      i
-      pp_tdecl_type
-      t
+  | Alias _ -> Format.fprintf out "(ty@[<v>pe %a %a@])" pp_ident i pp_tdecl_type t
   | _ -> Format.fprintf out "(ty@[<v>pe %a@,%a@])" pp_ident i pp_tdecl_type t
 
 and pp_tdecl_type out (t : tdecl_type) =

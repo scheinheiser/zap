@@ -1,3 +1,10 @@
+## Design
+- [ ] Redo type declaration syntax.
+- [ ] Parse and desugar these new declaration structures.
+
+## Parser
+- [ ] Migrate from use of exceptions to a custom error type.
+
 ## AST
 - [x] Make a distinction between sugared and desugared syntax.
 - [x] Make a desugarer.

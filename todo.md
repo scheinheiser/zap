@@ -17,7 +17,7 @@ dec sum : [Int] -> Int
 def sum [] := 0
 def sum (x :: xs) := x + sum xs
 
-dec map : (A -> B) -> [A] -> [B]
+dec map : { A, B : Type } -> (A -> B) -> [A] -> [B]
 def map _ [] := []
 def map f (x :: xs) := f x :: map f xs
 
@@ -30,7 +30,7 @@ def sum =
     | 0 => 0
     | x :: xs => x + sum xs
 
-dec map : (A -> B) -> [A] -> [B]
+dec map : {A, B : Type } (A -> B) -> [A] -> [B]
 def map =
   fun f -> fun xs ->
     match (f, xs) to

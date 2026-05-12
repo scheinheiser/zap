@@ -25,7 +25,6 @@ and expr =
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e₁ in e₂ *)
   | Match of located_expr * (located_pattern * located_expr option * located_expr) list
   | Lam of located_pattern * located_expr
-    (* `fun x y => x` is desugared to `fun x => fun y => x` *)
   | Const of located_const
   | TypeLit of prim
   | Binding of ident * located_expr (* x : T *)
@@ -51,46 +50,34 @@ and with_block = located_definition list
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
-(* this makes it easier to check if patterns match, making pattern matching on function arguments desugarable *)
-type pattern_style =
-  | SWild
-  | SConst of located_const
-  | SCons of pattern_style * pattern_style
-  | SCtor of ident * pattern_style list
-  | STuple of pattern_style list
-
-let rec pattern_to_style ((_, p) : located_pattern): pattern_style =
-  match p with
-  | PWild -> SWild
-  | PConst c -> SConst c
-  | PCons (l, r) -> SCons (pattern_to_style l, pattern_to_style r)
-  | PCtor (i, ps) -> SCtor (i, List.map pattern_to_style ps)
-  | PTuple t -> STuple (List.map pattern_to_style t)
-
-let rec equal_style (l : pattern_style) (r : pattern_style) : bool =
+(* pattern equality function to verify if two functions have the same type of arguments *)
+let rec equal_pattern ((_, l) : located_pattern) ((_, r) : located_pattern) : bool =
   match l, r with
-  | SWild, SWild -> true
-  | SConst (_, l), SConst (_, r) ->
+  | PWild, _ -> true
+  | _, PWild -> true
+  | PConst (_, l), PConst (_, r) ->
     (match l, r with
-    | Int l, Int r -> l = r 
-    | Float l, Float r -> l = r 
-    | String l, String r -> l = r
-    | Char l, Char r -> l = r 
-    | Bool l, Bool r -> l = r
-    | Unit, Unit -> true
-    | Atom l, Atom r | Udc l, Udc r -> get_str_combine l = get_str_combine r
-    | Ident _, _ -> true
-    | _, Ident _ -> true
-    | _ -> false)
-  | SCons (ll, lr), SCons (rl, rr) -> equal_style ll lr && equal_style rl rr
-  | SCtor (li, lps), SCtor (ri, rps) when (List.length lps = List.length rps) && (get_str_combine li = get_str_combine ri) -> 
-    List.map2 equal_style lps rps |>
-    List.fold_left (fun acc n -> acc && n) true
-  | STuple l, STuple r when List.length l = List.length r ->
-    List.map2 equal_style l r |>
-    List.fold_left ( && ) true
+     | Int l, Int r -> l = r
+     | Float l, Float r -> l = r
+     | String l, String r -> l = r
+     | Char l, Char r -> l = r
+     | Bool l, Bool r -> l = r
+     | Unit, Unit -> true
+     | Atom l, Atom r | Udc l, Udc r -> get_str_combine l = get_str_combine r
+     | Ident _, _ -> true
+     | _, Ident _ -> true
+     | _ -> false)
+  (*TODO: find a less hacky and more general version of this *)
+  | PCons (_, _), PConst (_, Udc (Str "[]")) -> true
+  | PConst (_, Udc (Str "[]")), PCons (_, _) -> true
+  | PCons (ll, lr), PCons (rl, rr) -> equal_pattern ll lr && equal_pattern rl rr
+  | PCtor (li, lps), PCtor (ri, rps)
+    when List.length lps = List.length rps && get_str_combine li = get_str_combine ri ->
+    List.for_all2 equal_pattern lps rps
+  | PTuple l, PTuple r when List.length l = List.length r -> List.for_all2 equal_pattern l r
   | _ -> false
-and ( $= ) l r = equal_style l r
+
+and ( $= ) l r = equal_pattern l r
 
 (* desugaring *)
 let fresh_pattern_ident =
@@ -98,8 +85,9 @@ let fresh_pattern_ident =
   fun () ->
     incr i;
     GStr ("__match__", !i)
+;;
 
-let rec desugar_pat ((loc, e) : Ast.located_pattern): located_pattern = 
+let rec desugar_pat ((loc, e) : Ast.located_pattern) : located_pattern =
   match e with
   | Ast.PWild -> loc, PWild
   | Ast.PConst c -> loc, PConst c
@@ -111,12 +99,17 @@ let rec desugar_pat ((loc, e) : Ast.located_pattern): located_pattern =
     let ps = List.map desugar_pat ps in
     loc, PCtor (i, ps)
   | Ast.PList ps ->
-    List.fold_right (fun n acc -> let n = desugar_pat n in loc, PCons (n, acc)) ps (loc, PConst (loc, Udc (Str "[]")))
-  | Ast.PTuple ps ->
-    loc, PTuple (List.map desugar_pat ps)
+    List.fold_right
+      (fun n acc ->
+         let n = desugar_pat n in
+         loc, PCons (n, acc))
+      ps
+      (loc, PConst (loc, Udc (Str "[]")))
+  | Ast.PTuple ps -> loc, PTuple (List.map desugar_pat ps)
+;;
 
 (* desugar a given surface syntax construct to its core grammar equivalent *)
-let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
+let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
   let desugar_abs l r cons =
     let l = desugar_expr l in
     let r = desugar_expr r in
@@ -130,7 +123,12 @@ let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
   | Ast.Ap (b, l, r) -> desugar_abs l r (fun l r -> loc, Ap (b, l, r))
   | Ast.Pi (l, r) -> desugar_abs l r (fun l r -> loc, Pi (l, r))
   | Ast.List es ->
-    List.fold_right (fun n acc -> let n = desugar_expr n in loc, Bop (n, Cons, acc)) es (loc, Const (loc, Udc (Str "[]")))
+    List.fold_right
+      (fun n acc ->
+         let n = desugar_expr n in
+         loc, Bop (n, Cons, acc))
+      es
+      (loc, Const (loc, Udc (Str "[]")))
   | Ast.Tuple es -> loc, Tuple (List.map desugar_expr es)
   | Ast.Let (p, t, e, n) ->
     let p = desugar_pat p in
@@ -144,28 +142,41 @@ let rec desugar_expr ((loc, e) : Ast.located_expr): located_expr =
     let t = desugar_expr t in
     let branches =
       let tp = loc, PConst (loc, Bool true) in
-      let tb = (tp, None, t) in
+      let tb = tp, None, t in
       match f with
-      | None -> [tb]
+      | None -> [ tb ]
       | Some f ->
         let f = desugar_expr f in
         let fp = loc, PConst (loc, Bool false) in
-        [tb; (fp, None, f)]
-    in loc, Match (c, branches)
+        [ tb; fp, None, f ]
+    in
+    loc, Match (c, branches)
   | Ast.Match (c, branches) ->
     let c = desugar_expr c in
     let branches =
-      List.map (fun (cond, wb, b) -> (desugar_pat cond, Base.Option.map ~f:desugar_expr wb, desugar_expr b)) branches
-    in loc, Match (c, branches)
+      List.map
+        (fun (cond, wb, b) ->
+           desugar_pat cond, Base.Option.map ~f:desugar_expr wb, desugar_expr b)
+        branches
+    in
+    loc, Match (c, branches)
   | Ast.Lam (ps, b) ->
     let b = desugar_expr b in
     (match ps with
-    | [] -> raise (Error.InternalError "Internal error - no arguments to a lambda function.")
-    | [ p ] ->
-      let p = desugar_pat p in
-      loc, Lam (p, b)
-    | ps ->
-      List.fold_left (fun acc n -> let n = desugar_pat n in loc, Lam (n, acc)) b (List.rev ps))
+     | [] ->
+       raise (Error.InternalError "Internal error - no arguments to a lambda function.")
+     | [ p ] ->
+       let p = desugar_pat p in
+       loc, Lam (p, b)
+     | ps ->
+      (* fun x y => x ==> fun x => fun y => x *)
+       List.fold_left
+         (fun acc n ->
+            let n = desugar_pat n in
+            loc, Lam (n, acc))
+         b
+         (List.rev ps))
+;;
 
 let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   let desugar_assoc ts = List.map (fun (i, e) -> i, desugar_expr e) ts in
@@ -173,9 +184,10 @@ let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   | Ast.Alias t -> loc, (i, Alias (desugar_expr t))
   | Ast.Variant ts -> loc, (i, Variant (desugar_assoc ts))
   | Ast.Record ts -> loc, (i, Record (desugar_assoc ts))
+;;
 
 let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
-  match d with  
+  match d with
   | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e)
   | Ast.Def (i, args, when_block, b, with_block) ->
     let args = List.map desugar_pat args in
@@ -199,41 +211,40 @@ let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
 *)
 and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definition list) =
   let defs', matches =
-    let args_as_styles = List.map pattern_to_style args in
     let rec group_defs ds failed_acc acc =
       match ds with
-      | (_, Dec _) as d :: ds -> group_defs ds (d :: failed_acc) acc
-      | (loc, Def (i', args', wb, b, wb')) as failed :: ds ->
-        let success = (loc, (i', args', wb, b, wb')) in
+      | ((_, Dec _) as d) :: ds -> group_defs ds (d :: failed_acc) acc
+      | ((loc, Def (i', args', wb, b, wb')) as failed) :: ds ->
+        let success = loc, (i', args', wb, b, wb') in
         let equal_i = get_str_combine i = get_str_combine i' in
         let equal_arg_c = List.length args = List.length args' in
         if equal_i && equal_arg_c
         then (
           (* if the functions have the same identifier and argument count, we check that their argument styles match. *)
-          let args'' = List.map pattern_to_style args in
-          if List.map2 ( $= ) args'' args_as_styles |> List.fold_left ( && ) true
+          if List.for_all2 ( $= ) args args
           (* any successful matches are removed from the definition list so that they aren't checked again. *)
-          then group_defs ds failed_acc (success :: acc) 
-          else group_defs ds (failed :: failed_acc) acc
-        )
+          then group_defs ds failed_acc (success :: acc)
+          else group_defs ds (failed :: failed_acc) acc)
         else group_defs ds (failed :: failed_acc) acc
       | [] -> failed_acc, acc
-    in group_defs defs [] []
+    in
+    group_defs defs [] []
   in
   match matches with
   | [] -> (loc, Def (i, args, when_block, body, wb)), defs
   | _ ->
     let match_idents = List.map (fun _ -> loc, Ident (fresh_pattern_ident ())) args in
     let new_body, with_block =
-      let rec construct_branches ds branch_acc wb_acc = 
+      let rec construct_branches ds branch_acc wb_acc =
         match ds with
-        | [] -> 
-          let b = ((loc, PTuple args), when_block, body) in
+        | [] ->
+          let b = (loc, PTuple args), when_block, body in
           b :: branch_acc, List.flatten (wb :: wb_acc)
         | (_, (_, args, when_block, b, with_block)) :: ds ->
           (* f x₁ .. xₙ : ... = ... ==> | (x₁, .., xₙ) when ... => ... *)
-          let branch = ((loc, PTuple args), when_block, b) in
-          construct_branches ds (branch :: branch_acc) (with_block :: wb_acc) (* with_blocks are preserved to prevent any undefined variable errors *)
+          let branch = (loc, PTuple args), when_block, b in
+          construct_branches ds (branch :: branch_acc) (with_block :: wb_acc)
+        (* with_blocks are preserved to prevent any undefined variable errors *)
       in
       let c = loc, Tuple (List.map (fun i -> loc, Const i) match_idents) in
       let branches, wb = construct_branches matches [] [] in
@@ -241,22 +252,25 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
     in
     (* turns the args of the top-level function to the placeholder variables *)
     let args = List.map (fun i -> loc, PConst i) match_idents in
-    let new_def = loc, (Def (i, args, when_block, new_body, with_block)) in
+    let new_def = loc, Def (i, args, when_block, new_body, with_block) in
     new_def, defs'
+;;
 
-let desugar_program ((i, imps, decls, defs) : Ast.program) : program = 
-  let defs = 
+let desugar_program ((i, imps, decls, defs) : Ast.program) : program =
+  let defs =
     let defs = List.map desugar_def defs in
     let rec without_matches ds acc =
       match ds with
       | [] -> acc
-      | (_, Dec _) as d :: ds -> without_matches ds (d :: acc)
+      | ((_, Dec _) as d) :: ds -> without_matches ds (d :: acc)
       | (loc, Def (i, args, when_block, body, with_block)) :: ds ->
         let d, ds = desugar_flpm (loc, (i, args, when_block, body, with_block)) ds in
         without_matches ds (d :: acc)
-    in without_matches defs []
+    in
+    without_matches defs []
   in
   i, imps, List.map desugar_ty_decl decls, defs
+;;
 
 (* pretty printing *)
 let rec pp_pattern out ((_, arg) : located_pattern) =
@@ -305,11 +319,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       pp_expr
       n
   | Lam (arg, body) ->
-    Format.fprintf
-      out
-      "(la@[<v>m (%a) %a@])"
-      pp_pattern arg
-      pp_expr body
+    Format.fprintf out "(la@[<v>m (%a) %a@])" pp_pattern arg pp_expr body
   | Match (cond, bs) ->
     let pp_branch out (p, wb, b) =
       Format.fprintf
@@ -336,14 +346,7 @@ let rec pp_expr out ((_, e) : located_expr) =
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   match t with
-  | Alias _ ->
-    Format.fprintf
-      out
-      "(ty@[<v>pe %a %a@])"
-      pp_ident
-      i
-      pp_tdecl_type
-      t
+  | Alias _ -> Format.fprintf out "(ty@[<v>pe %a %a@])" pp_ident i pp_tdecl_type t
   | _ -> Format.fprintf out "(ty@[<v>pe %a@,%a@])" pp_ident i pp_tdecl_type t
 
 and pp_tdecl_type out (t : tdecl_type) =

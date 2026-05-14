@@ -40,6 +40,9 @@ and token =
   | IN
   | MODULE
   | IMPORT
+  | ALIAS
+  | UNION
+  | RECORD
   | UNIVERSE
   | TTYPE
   | AND
@@ -69,6 +72,7 @@ and token =
   | SEMISEMI
   | COLON
   | EQ
+  | DEQ
   | ASSIGNMENT
   | ARROW
   | F_ARROW
@@ -113,6 +117,9 @@ let show (t : token) : string =
   | IN -> "IN"
   | MODULE -> "MODULE"
   | IMPORT -> "IMPORT"
+  | ALIAS -> "ALIAS"
+  | UNION -> "UNION"
+  | RECORD -> "RECORD"
   | UNIVERSE -> "UNIVERSE"
   | TTYPE -> "TTYPE"
   | AND -> "AND"
@@ -142,6 +149,7 @@ let show (t : token) : string =
   | SEMISEMI -> "SEMISEMI"
   | COLON -> "COLON"
   | EQ -> "EQ"
+  | DEQ -> "DEQ"
   | ASSIGNMENT -> "ASSIGNMENT"
   | ARROW -> "ARROW"
   | F_ARROW -> "F_ARROW"
@@ -172,7 +180,7 @@ let is_op (t : token) : bool =
   | GTE
   | CONS
   | NE
-  | EQ -> true
+  | DEQ -> true
   | _ -> false
 ;;
 
@@ -191,6 +199,6 @@ let op_to_string (t : token) : string =
   | GTE -> ">="
   | CONS -> "::"
   | NE -> "/="
-  | EQ -> "="
+  | DEQ -> "=="
   | _ -> ""
 ;;

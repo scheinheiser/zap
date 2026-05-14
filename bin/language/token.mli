@@ -40,6 +40,9 @@ and token =
   | IN
   | MODULE
   | IMPORT
+  | ALIAS
+  | UNION
+  | RECORD
   | UNIVERSE
   | TTYPE
   | AND
@@ -69,6 +72,7 @@ and token =
   | SEMISEMI
   | COLON
   | EQ
+  | DEQ
   | ASSIGNMENT
   | ARROW
   | F_ARROW

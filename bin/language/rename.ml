@@ -81,10 +81,10 @@ end = struct
       (loc, PConst (s, Ident i')), env
     | PConst _ -> (loc, pat), env
     | PWild -> (loc, pat), env
-    | PCons (l, r) ->
+    | PBop (l, op, r) ->
       let l, env = rename_pattern env l in
       let r, env = rename_pattern env r in
-      (loc, PCons (l, r)), env
+      (loc, PBop (l, op, r)), env
     | PCtor (i, v) ->
       let i =
         match VM.find_opt (get_str i) env with
@@ -129,7 +129,7 @@ end = struct
     | Let (p, t, expr, n) ->
       let rec collect_idents acc = function
         | _, PConst (_, Ident i) -> i :: acc
-        | _, PCons (l, r) -> collect_idents acc l |> Fun.flip collect_idents r
+        | _, PBop (l, _, r) -> collect_idents acc l |> Fun.flip collect_idents r
         | _, PCtor (_, ps) ->
           let rec go a = function
             | [] -> a

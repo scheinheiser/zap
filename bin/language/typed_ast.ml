@@ -54,7 +54,7 @@ let rec show_pat = function
   | _, PTuple ps -> Printf.sprintf "(%s)" (List.map show_pat ps |> String.concat ", ")
   | _, PConst (_, c) ->
     (match c with
-     | Ident i | Udc i | Atom i -> Format.asprintf "%a" pp_ident i
+     | Ident i | Udc i -> Format.asprintf "%a" pp_ident i
      | Int i -> string_of_int i
      | Float f -> string_of_float f
      | Char c -> Char.escaped c

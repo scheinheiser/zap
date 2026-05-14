@@ -1,9 +1,13 @@
 ## Design
-- [ ] Redo type declaration syntax.
-- [ ] Parse and desugar these new declaration structures.
+- [x] Redo type declaration syntax.
+- [x] Turn `PCons` into a general binary constructor construct.
+- [ ] Remove `CONS` and any builtin operator in favour of identifying it later on or something.
+- [ ] Properly desugar record constructors.
 
 ## Parser
-- [ ] Migrate from use of exceptions to a custom error type.
+- [x] Migrate from use of exceptions to a custom error type.
+- [x] Parse and desugar new type declaration structures.
+- [ ] Consider adding error recovery, maybe in the form of token insertion (what token you'd expect to be there)?
 
 ## AST
 - [x] Make a distinction between sugared and desugared syntax.

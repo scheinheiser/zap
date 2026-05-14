@@ -7,7 +7,7 @@ type located_pattern = Location.t * pattern
 and pattern =
   | PWild (* _ *)
   | PConst of located_const
-  | PCons of located_pattern * located_pattern
+  | PBop of located_pattern * ident * located_pattern
   | PCtor of ident * located_pattern list
   | PList of located_pattern list
   | PTuple of located_pattern list
@@ -32,14 +32,15 @@ and expr =
   | TypeLit of prim
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
+  | RCons of ident * (ident * located_expr) list (* MkRec { x₁ = y₁; ...; xₙ = yₙ } *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
 and tdecl_type =
   | Alias of located_expr
-  | Variant of (ident * located_expr) list
-  | Record of (ident * located_expr) list
+  | Variant of located_expr * (ident * located_expr) list
+  | Record of ident * (ident * located_expr) list
 
 type located_definition = Location.t * definition
 

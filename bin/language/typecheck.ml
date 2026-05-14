@@ -39,7 +39,6 @@ let get_const_type (c : const) : prim =
   | String _ -> PString
   | Char _ -> PChar
   | Bool _ -> PBool
-  | Atom _ -> PAtom
   | Unit -> PUnit
   | Ident _ | Udc _ ->
     raise (Error.InternalError "called `get_const_type` on identifier.")

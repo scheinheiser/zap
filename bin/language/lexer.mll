@@ -3,6 +3,10 @@
   open Util
   open Token
 
+  let report_err err =
+    Error.pp_err Format.err_formatter err;
+    exit 1
+
   let next_line lexbuf =
     let pos = lexbuf.lex_curr_p in
     lexbuf.lex_curr_p <-
@@ -49,6 +53,9 @@
     ("dec", DEC);
     ("def", DEF);
     ("type", TYPE);
+    ("alias", ALIAS);
+    ("union", UNION);
+    ("record", RECORD);
     ("universe", UNIVERSE);
     ("Type", TTYPE);
     ("forall", FORALL);
@@ -68,6 +75,7 @@
     ("&&", AND);
     ("||", OR);
     ("=", EQ);
+    ("==", DEQ);
     ("/=", NE);
     (">", GT);
     ("<", LT);
@@ -118,7 +126,7 @@ rule token = parse
   | '_'         {with_pos lexbuf WILDCARD}
   | op+ as op'
     {let tok = match (List.assoc_opt op' builtin_symbol) with
-              | (Some op'') -> op''
+              | (Some op') -> op'
               | None        -> OP op'
      in with_pos lexbuf tok}
   | '\''        {tokenize_char lexbuf}
@@ -132,14 +140,14 @@ rule token = parse
   | eof         {with_pos lexbuf EOF}
   | _ as c      {
     let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Unrecognised character: '%c'." c) in
-    Error.report_err err
+    report_err err
   }
 and tokenize_char = parse
   | '\\' {tokenize_control lexbuf}
   | ((['a'-'z' 'A'-'Z' '0'-'9' '_'] | symbol) as c) '\'' {with_pos lexbuf (CHAR c)}
   | _ as c {
     let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Invalid char: %c" c) in
-    Error.report_err err
+    report_err err
   }
 and tokenize_control = parse
   | 'n' '\'' {with_pos lexbuf (CHAR '\n')}
@@ -149,25 +157,25 @@ and tokenize_control = parse
   | '\\' '\'' {with_pos lexbuf (CHAR '\\')}
   | _ as c {
     let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Invalid escape sequence: %c" c) in
-    Error.report_err err
+    report_err err
   }
 and tokenize_string buf = parse
   | '\"'     {with_pos lexbuf (STRING (Buffer.contents buf))}
   | str as s {Buffer.add_string buf s; tokenize_string buf lexbuf}
   | eof      {
     let err = (Some (Location.of_lexbuf lexbuf), "Unterminated string.") in
-    Error.report_err err
+    report_err err
   }
   | _ as c {
     let err = (Some (Location.of_lexbuf lexbuf), Printf.sprintf "Invalid string char: %c" c) in
-    Error.report_err err
+    report_err err
   }
 and skip_comment = parse
   | newline {next_line lexbuf; token lexbuf}
   | _       {skip_comment lexbuf}
   | eof     {
     let err = (Some (Location.of_lexbuf lexbuf), "Unterminated comment.") in
-    Error.report_err err
+    report_err err
   }
 and skip_multiline_comment nesting = parse
   | "%{"    {skip_multiline_comment (nesting + 1) lexbuf}
@@ -176,5 +184,5 @@ and skip_multiline_comment nesting = parse
   | _       {skip_multiline_comment nesting lexbuf}
   | eof     {
     let err = (Some (Location.of_lexbuf lexbuf), "Unterminated comment.") in
-    Error.report_err err
+    report_err err
   }

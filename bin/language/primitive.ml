@@ -15,7 +15,6 @@ and const =
   | String of string
   | Char of char
   | Bool of bool
-  | Atom of ident
   | Unit
   | Ident of ident
   | Udc of ident (* user defined costructor *)
@@ -26,7 +25,6 @@ type prim =
   | PString
   | PChar
   | PBool
-  | PAtom
   | PUnit
   | PUni of int (* A : Type n *)
 
@@ -61,7 +59,6 @@ let show_prim = function
   | PString -> "String"
   | PChar -> "Char"
   | PBool -> "Bool"
-  | PAtom -> "Atom"
   | PUnit -> "Unit"
   | PUni ix -> Printf.sprintf "U%i" ix
 ;;
@@ -92,7 +89,6 @@ let pp_const out ((_, c) : located_const) =
   | String s -> Format.fprintf out "\"%s\"" s
   | Char c -> Format.fprintf out "'%s'" (Char.escaped c)
   | Bool b -> Format.fprintf out "%b" b
-  | Atom a -> Format.fprintf out "%@%a" pp_ident a
   | Unit -> Format.fprintf out "()"
   | Ident i | Udc i -> pp_ident out i
 ;;

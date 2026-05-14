@@ -7,14 +7,17 @@ let border () =
 ;;
 
 let () =
-  let input = In_channel.(open_text "examples/flpmtest.zap" |> input_all) in
+  let input = In_channel.(open_text "examples/typedecls.zap" |> input_all) in
   (* let input = "[]" in *)
   let l = Lexer.of_string input in
   let res = Parser.parse_program l in
-  let res = Desugar.desugar_program res in
-  Printf.printf "%s\n" input;
-  border ();
-  Format.fprintf Format.std_formatter "%a@." Desugar.pp_program res
+  match res with
+  | Ok res -> 
+    let res = Desugar.desugar_program res in
+    Printf.printf "%s\n" input;
+    border ();
+    Format.fprintf Format.std_formatter "%a@." Desugar.pp_program res
+  | Error e -> print_endline (Base.Error.to_string_hum e)
 ;;
 (* let res = AR.rename_program res in *)
 (* match (Typecheck.infer (Typecheck.empty ()) res) with *)

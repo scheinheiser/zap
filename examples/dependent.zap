@@ -1,14 +1,14 @@
 @module DepedentTypesShowcase
 
 % explicit arguments
-dec id_exp : (A : Type) -> A -> A.
-def id_exp _ x := x
+dec id : (A : Type) -> A -> A
+def id _ x := x
 
 % implicit arguments. they must be at the beginning of the arrow type.
-% dec id_imp : { A : Type } -> A -> A.
-def id_imp x := x
+% dec id' : { A : Type } -> A -> A
+def id' x := x
 
-dec match_test : A -> A -> A.
+dec match_test : (A: Type) -> A -> A
 def match_test _ n :=
   match n to
   | Int => 1
@@ -20,5 +20,5 @@ def match_test _ n :=
   | () => ()
   | _ => n
 
-dec main : IO ().
+dec main : IO ()
 def main := print "hello, zap!"

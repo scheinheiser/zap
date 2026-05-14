@@ -7,7 +7,7 @@ type located_pattern = Location.t * pattern
 and pattern =
   | PWild (* _ *)
   | PConst of located_const
-  | PCons of located_pattern * located_pattern
+  | PBop of located_pattern * ident * located_pattern
   | PCtor of ident * located_pattern list
   | PTuple of located_pattern list
 
@@ -35,8 +35,8 @@ and ty_decl = ident * tdecl_type
 
 and tdecl_type =
   | Alias of located_expr
-  | Variant of (ident * located_expr) list
-  | Record of (ident * located_expr) list
+  | Variant of located_expr * (ident * located_expr) list
+  | Record of ident * (ident * located_expr) list
 
 type located_definition = Location.t * definition
 
@@ -63,14 +63,14 @@ let rec equal_pattern ((_, l) : located_pattern) ((_, r) : located_pattern) : bo
      | Char l, Char r -> l = r
      | Bool l, Bool r -> l = r
      | Unit, Unit -> true
-     | Atom l, Atom r | Udc l, Udc r -> get_str_combine l = get_str_combine r
+     | Udc l, Udc r -> get_str_combine l = get_str_combine r
      | Ident _, _ -> true
      | _, Ident _ -> true
      | _ -> false)
-  (*TODO: find a less hacky and more general version of this *)
-  | PCons (_, _), PConst (_, Udc (Str "[]")) -> true
-  | PConst (_, Udc (Str "[]")), PCons (_, _) -> true
-  | PCons (ll, lr), PCons (rl, rr) -> equal_pattern ll lr && equal_pattern rl rr
+  (*TODO: find a way to do this *)
+  (* | PCons (_, _), PConst (_, Udc (Str "[]")) -> true *)
+  (* | PConst (_, Udc (Str "[]")), PCons (_, _) -> true *)
+  | PBop (ll, lop, lr), PBop (rl, rop, rr) when get_str_combine lop = get_str_combine rop -> equal_pattern ll lr && equal_pattern rl rr
   | PCtor (li, lps), PCtor (ri, rps)
     when List.length lps = List.length rps && get_str_combine li = get_str_combine ri ->
     List.for_all2 equal_pattern lps rps
@@ -91,10 +91,10 @@ let rec desugar_pat ((loc, e) : Ast.located_pattern) : located_pattern =
   match e with
   | Ast.PWild -> loc, PWild
   | Ast.PConst c -> loc, PConst c
-  | Ast.PCons (l, r) ->
+  | Ast.PBop (l, op, r) ->
     let l = desugar_pat l in
     let r = desugar_pat r in
-    loc, PCons (l, r)
+    loc, PBop (l, op, r)
   | Ast.PCtor (i, ps) ->
     let ps = List.map desugar_pat ps in
     loc, PCtor (i, ps)
@@ -102,7 +102,7 @@ let rec desugar_pat ((loc, e) : Ast.located_pattern) : located_pattern =
     List.fold_right
       (fun n acc ->
          let n = desugar_pat n in
-         loc, PCons (n, acc))
+         loc, PBop (n, Str "::", acc))
       ps
       (loc, PConst (loc, Udc (Str "[]")))
   | Ast.PTuple ps -> loc, PTuple (List.map desugar_pat ps)
@@ -176,14 +176,17 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
             loc, Lam (n, acc))
          b
          (List.rev ps))
+  | Ast.RCons (i, fields) ->
+    (*TODO: here we assume that the fields have been put in the correct order. need to make it order-agnostic somehow. *)
+    List.fold_left (fun acc (_, n) -> let n = desugar_expr n in loc, Ap (0, acc, n)) (loc, Const (loc, Udc i)) fields
 ;;
 
 let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   let desugar_assoc ts = List.map (fun (i, e) -> i, desugar_expr e) ts in
   match decl with
   | Ast.Alias t -> loc, (i, Alias (desugar_expr t))
-  | Ast.Variant ts -> loc, (i, Variant (desugar_assoc ts))
-  | Ast.Record ts -> loc, (i, Record (desugar_assoc ts))
+  | Ast.Variant (tsig, ts) -> loc, (i, Variant (desugar_expr tsig, desugar_assoc ts))
+  | Ast.Record (cons, ts) -> loc, (i, Record (cons, desugar_assoc ts))
 ;;
 
 let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
@@ -277,7 +280,7 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
   | PWild -> Format.fprintf out "_"
-  | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
+  | PBop (l, op, r) -> Format.fprintf out "(%a @[<hov>%a %a@])" pp_ident op pp_pattern l pp_pattern r
   | PCtor (i, v) ->
     Format.fprintf
       out
@@ -355,16 +358,18 @@ and pp_tdecl_type out (t : tdecl_type) =
   in
   match t with
   | Alias t -> pp_expr out t
-  | Record r ->
+  | Record (cons, r) ->
     Format.fprintf
       out
-      "(re@[<v>cord@,%a@])"
+      "(re@[<v>cord %a@,%a@])"
+      pp_ident cons
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
-  | Variant v ->
+  | Variant (tsig, v) ->
     Format.fprintf
       out
-      "(va@[<v>riant@,%a@])"
+      "(va@[<v>riant { %a }@,%a@])"
+      pp_expr tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       v
 ;;

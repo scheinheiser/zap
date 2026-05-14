@@ -1,6 +1,9 @@
 type t = Location.t option * string
 
 exception InternalError of string
+exception Todo of string
+
+let todo m = raise (Todo m)
 
 let pp_err out ((loc, msg) : t) =
   match loc with
@@ -22,7 +25,6 @@ let format_err ((loc, msg) : t) : string =
 
 let report_err (err : t) =
   pp_err Format.err_formatter err;
-  exit 1
 ;;
 
 let report_warning (warning : t) = pp_warning Format.std_formatter warning

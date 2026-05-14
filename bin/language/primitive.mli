@@ -14,7 +14,6 @@ and const =
   | String of string
   | Char of char
   | Bool of bool
-  | Atom of ident
   | Unit
   | Ident of ident
   | Udc of ident (* user defined costructor *)
@@ -25,7 +24,6 @@ type prim =
   | PString
   | PChar
   | PBool
-  | PAtom
   | PUnit
   | PUni of int (* A : Type n *)
 

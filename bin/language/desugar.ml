@@ -70,11 +70,13 @@ let rec equal_pattern ((_, l) : located_pattern) ((_, r) : located_pattern) : bo
   (*TODO: find a way to do this *)
   (* | PCons (_, _), PConst (_, Udc (Str "[]")) -> true *)
   (* | PConst (_, Udc (Str "[]")), PCons (_, _) -> true *)
-  | PBop (ll, lop, lr), PBop (rl, rop, rr) when get_str_combine lop = get_str_combine rop -> equal_pattern ll lr && equal_pattern rl rr
+  | PBop (ll, lop, lr), PBop (rl, rop, rr) when get_str_combine lop = get_str_combine rop
+    -> equal_pattern ll lr && equal_pattern rl rr
   | PCtor (li, lps), PCtor (ri, rps)
     when List.length lps = List.length rps && get_str_combine li = get_str_combine ri ->
     List.for_all2 equal_pattern lps rps
-  | PTuple l, PTuple r when List.length l = List.length r -> List.for_all2 equal_pattern l r
+  | PTuple l, PTuple r when List.length l = List.length r ->
+    List.for_all2 equal_pattern l r
   | _ -> false
 
 and ( $= ) l r = equal_pattern l r
@@ -169,7 +171,7 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
        let p = desugar_pat p in
        loc, Lam (p, b)
      | ps ->
-      (* fun x y => x ==> fun x => fun y => x *)
+       (* fun x y => x ==> fun x => fun y => x *)
        List.fold_left
          (fun acc n ->
             let n = desugar_pat n in
@@ -179,11 +181,21 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
   | Ast.RCons (i, fields) ->
     (*TODO: here we assume that the fields have been put in the correct order. need to make it order-agnostic somehow. *)
     (* cons { x₁ = y₁; ...; xₙ = yₙ }  ==> cons y₁ .. yₙ *)
-    List.fold_left (fun acc (_, n) -> let n = desugar_expr n in loc, Ap (0, acc, n)) (loc, Const (loc, Udc i)) fields
+    List.fold_left
+      (fun acc (_, n) ->
+         let n = desugar_expr n in
+         loc, Ap (0, acc, n))
+      (loc, Const (loc, Udc i))
+      fields
   | Ast.RUpdate (i, fields) ->
     (*TODO: need a way to get the fields from the record type so that it can be added at the same time. *)
     (* { x where y₁ = z₁; ...; yₙ = zₙ } ==> cons z₁ ... zₙ ; any missing fields are filled in with x.yₙ *)
-    List.fold_left (fun acc (_, n) -> let n = desugar_expr n in loc, Ap (0, acc, n)) (loc, Const (loc, Udc i)) fields
+    List.fold_left
+      (fun acc (_, n) ->
+         let n = desugar_expr n in
+         loc, Ap (0, acc, n))
+      (loc, Const (loc, Udc i))
+      fields
 ;;
 
 let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
@@ -191,7 +203,8 @@ let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   match decl with
   | Ast.Alias t -> loc, (i, Alias (desugar_expr t))
   | Ast.Variant (tsig, ts) -> loc, (i, Variant (desugar_expr tsig, desugar_assoc ts))
-  | Ast.Record (cons, tsig, ts) -> loc, (i, Record (cons, desugar_expr tsig, desugar_assoc ts))
+  | Ast.Record (cons, tsig, ts) ->
+    loc, (i, Record (cons, desugar_expr tsig, desugar_assoc ts))
 ;;
 
 let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
@@ -229,12 +242,13 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
         let equal_i = get_str_combine i = get_str_combine i' in
         let equal_arg_c = List.length args = List.length args' in
         if equal_i && equal_arg_c
-        then (
-          (* if the functions have the same identifier and argument count, we check that their patterns match. *)
-          (* any successful matches are removed from the definition list so that they aren't checked again. *)
-          if List.for_all2 ( $= ) args args
+        then
+          if
+            (* if the functions have the same identifier and argument count, we check that their patterns match. *)
+            (* any successful matches are removed from the definition list so that they aren't checked again. *)
+            List.for_all2 ( $= ) args args
           then group_defs ds failed_acc (success :: acc)
-          else group_defs ds (failed :: failed_acc) acc)
+          else group_defs ds (failed :: failed_acc) acc
         else group_defs ds (failed :: failed_acc) acc
       | [] -> failed_acc, acc
     in
@@ -287,7 +301,8 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
   | PWild -> Format.fprintf out "_"
-  | PBop (l, op, r) -> Format.fprintf out "(%a @[<hov>%a %a@])" pp_ident op pp_pattern l pp_pattern r
+  | PBop (l, op, r) ->
+    Format.fprintf out "(%a @[<hov>%a %a@])" pp_ident op pp_pattern l pp_pattern r
   | PCtor (i, v) ->
     Format.fprintf
       out
@@ -369,15 +384,18 @@ and pp_tdecl_type out (t : tdecl_type) =
     Format.fprintf
       out
       "(re@[<v>cord %a { %a }@,%a@])"
-      pp_ident cons
-      pp_expr tsig
+      pp_ident
+      cons
+      pp_expr
+      tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant (tsig, v) ->
     Format.fprintf
       out
       "(va@[<v>riant { %a }@,%a@])"
-      pp_expr tsig
+      pp_expr
+      tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       v
 ;;

@@ -12,7 +12,7 @@ let () =
   let l = Lexer.of_string input in
   let res = Parser.parse_program l in
   match res with
-  | Ok res -> 
+  | Ok res ->
     let res = Desugar.desugar_program res in
     Printf.printf "%s\n" input;
     border ();

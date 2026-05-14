@@ -40,8 +40,12 @@ and ty_decl = ident * tdecl_type
 
 and tdecl_type =
   | Alias of located_expr
-  | Variant of located_expr * (ident * located_expr) list (* type signature and variants *)
-  | Record of ident * located_expr * (ident * located_expr) list (* constructor name, type signature and fields *)
+  | Variant of
+      located_expr * (ident * located_expr) list (* type signature and variants *)
+  | Record of
+      ident
+      * located_expr
+      * (ident * located_expr) list (* constructor name, type signature and fields *)
 
 type located_definition = Location.t * definition
 
@@ -76,7 +80,8 @@ let rec pp_pattern out ((_, arg) : located_pattern) =
       "(@[<hov>%a@])"
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ",@ ") pp_pattern)
       ps
-  | PBop (l, cons, r) -> Format.fprintf out "(%a @[<hov>%a %a@])" pp_ident cons pp_pattern l pp_pattern r
+  | PBop (l, cons, r) ->
+    Format.fprintf out "(%a @[<hov>%a %a@])" pp_ident cons pp_pattern l pp_pattern r
   | PCtor (i, v) ->
     Format.fprintf
       out
@@ -158,15 +163,23 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Binding (i, e) -> Format.fprintf out "(%a : %a)" pp_ident i pp_expr e
   | TypeLit p -> Format.fprintf out "%a" pp_prim p
   | RCons (i, fields) ->
-    let pp_field out (i, v) =
-      Format.fprintf out "%a = %a" pp_ident i pp_expr v
-    in
-    Format.fprintf out "%a @[{@,%a@]}" pp_ident i Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field) fields
+    let pp_field out (i, v) = Format.fprintf out "%a = %a" pp_ident i pp_expr v in
+    Format.fprintf
+      out
+      "%a @[{@,%a@]}"
+      pp_ident
+      i
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field)
+      fields
   | RUpdate (i, fields) ->
-    let pp_field out (i, v) =
-      Format.fprintf out "%a = %a" pp_ident i pp_expr v
-    in
-    Format.fprintf out "{%a wh@[ere@,%a@]}" pp_ident i Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field) fields
+    let pp_field out (i, v) = Format.fprintf out "%a = %a" pp_ident i pp_expr v in
+    Format.fprintf
+      out
+      "{%a wh@[ere@,%a@]}"
+      pp_ident
+      i
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field)
+      fields
 ;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
@@ -184,15 +197,18 @@ and pp_tdecl_type out (t : tdecl_type) =
     Format.fprintf
       out
       "(re@[<v>cord %a { %a }@,%a@])"
-      pp_ident cons
-      pp_expr tsig
+      pp_ident
+      cons
+      pp_expr
+      tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant (tsig, v) ->
     Format.fprintf
       out
       "(va@[<v>riant { %a }@,%a@])"
-      pp_expr tsig
+      pp_expr
+      tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       v
 ;;

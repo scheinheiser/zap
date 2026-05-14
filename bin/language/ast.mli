@@ -33,6 +33,7 @@ and expr =
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
   | RCons of ident * (ident * located_expr) list (* MkRec { x₁ = y₁; ...; xₙ = yₙ } *)
+  | RUpdate of ident * (ident * located_expr) list (* { x where y₁ = z₁; ...; yₙ = zₙ } *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -40,7 +41,7 @@ and ty_decl = ident * tdecl_type
 and tdecl_type =
   | Alias of located_expr
   | Variant of located_expr * (ident * located_expr) list
-  | Record of ident * (ident * located_expr) list
+  | Record of ident * located_expr * (ident * located_expr) list
 
 type located_definition = Location.t * definition
 

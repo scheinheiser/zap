@@ -36,7 +36,7 @@ and ty_decl = ident * tdecl_type
 and tdecl_type =
   | Alias of located_expr
   | Variant of located_expr * (ident * located_expr) list
-  | Record of ident * (ident * located_expr) list
+  | Record of ident * located_expr * (ident * located_expr) list
 
 type located_definition = Location.t * definition
 
@@ -178,6 +178,11 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
          (List.rev ps))
   | Ast.RCons (i, fields) ->
     (*TODO: here we assume that the fields have been put in the correct order. need to make it order-agnostic somehow. *)
+    (* cons { x₁ = y₁; ...; xₙ = yₙ }  ==> cons y₁ .. yₙ *)
+    List.fold_left (fun acc (_, n) -> let n = desugar_expr n in loc, Ap (0, acc, n)) (loc, Const (loc, Udc i)) fields
+  | Ast.RUpdate (i, fields) ->
+    (*TODO: need a way to get the fields from the record type so that it can be added at the same time. *)
+    (* { x where y₁ = z₁; ...; yₙ = zₙ } ==> cons z₁ ... zₙ ; any missing fields are filled in with x.yₙ *)
     List.fold_left (fun acc (_, n) -> let n = desugar_expr n in loc, Ap (0, acc, n)) (loc, Const (loc, Udc i)) fields
 ;;
 
@@ -186,7 +191,7 @@ let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
   match decl with
   | Ast.Alias t -> loc, (i, Alias (desugar_expr t))
   | Ast.Variant (tsig, ts) -> loc, (i, Variant (desugar_expr tsig, desugar_assoc ts))
-  | Ast.Record (cons, ts) -> loc, (i, Record (cons, desugar_assoc ts))
+  | Ast.Record (cons, tsig, ts) -> loc, (i, Record (cons, desugar_expr tsig, desugar_assoc ts))
 ;;
 
 let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
@@ -200,12 +205,14 @@ let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
     loc, Def (i, args, when_block, b, with_block)
 
 (*
-  this desugars function-level pattern matching in the style of:
     dec map : (A -> B) -> [A] -> [B]
     def map _ [] := []
     def map f (x :: xs) := f x :: map f xs
 
-  turning it to:
+                  ||
+                  ||
+                  \/
+
     dec map : (A -> B) -> [A] -> [B]
     def map __match__1 __match__2 :=
       match (__match__1, __match__2) to
@@ -223,9 +230,9 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
         let equal_arg_c = List.length args = List.length args' in
         if equal_i && equal_arg_c
         then (
-          (* if the functions have the same identifier and argument count, we check that their argument styles match. *)
-          if List.for_all2 ( $= ) args args
+          (* if the functions have the same identifier and argument count, we check that their patterns match. *)
           (* any successful matches are removed from the definition list so that they aren't checked again. *)
+          if List.for_all2 ( $= ) args args
           then group_defs ds failed_acc (success :: acc)
           else group_defs ds (failed :: failed_acc) acc)
         else group_defs ds (failed :: failed_acc) acc
@@ -253,7 +260,7 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
       let branches, wb = construct_branches matches [] [] in
       (loc, Match (c, branches)), wb
     in
-    (* turns the args of the top-level function to the placeholder variables *)
+    (* def map f (x :: xs) := ... ==> def map __match_0 __match_1 := ... *)
     let args = List.map (fun i -> loc, PConst i) match_idents in
     let new_def = loc, Def (i, args, when_block, new_body, with_block) in
     new_def, defs'
@@ -358,11 +365,12 @@ and pp_tdecl_type out (t : tdecl_type) =
   in
   match t with
   | Alias t -> pp_expr out t
-  | Record (cons, r) ->
+  | Record (cons, tsig, r) ->
     Format.fprintf
       out
-      "(re@[<v>cord %a@,%a@])"
+      "(re@[<v>cord %a { %a }@,%a@])"
       pp_ident cons
+      pp_expr tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant (tsig, v) ->

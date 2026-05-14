@@ -37,7 +37,7 @@ and ty_decl = ident * tdecl_type
 and tdecl_type =
   | Alias of located_expr
   | Variant of located_expr * (ident * located_expr) list
-  | Record of ident * (ident * located_expr) list
+  | Record of ident * located_expr * (ident * located_expr) list
 
 type located_definition = Location.t * definition
 

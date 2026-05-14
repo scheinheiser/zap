@@ -13,10 +13,6 @@ type operator_map = (int * assoc) OM.t
 
 let fresh_om () : operator_map = OM.empty
 
-let report_err err =
-  Error.pp_err Format.err_formatter err;
-  exit 1
-
 let ( >>= ) = Base.Or_error.( >>= )
 let ( >>| ) = Base.Or_error.( >>| )
 
@@ -258,6 +254,7 @@ module Parser = struct
        | None -> 8)
     | UPPER_IDENT _
     | IDENT _
+    | DOT_SEP_IDENT _
     | INT _
     | FLOAT _
     | CHAR _
@@ -426,7 +423,7 @@ module Parser = struct
           separated_list l ~sep:SEMI 
             (fun l -> 
                let* id = parse_lower_ident l in 
-               let* _ = consume l EQ "Expected a '=' to separate" in
+               let* _ = consume l EQ "Expected a '=' to separate identifier and expression in record construction." in
                let@ v = parse_expr l 0 om in
                id, v)
         in
@@ -434,6 +431,9 @@ module Parser = struct
         e, fields
       in
       ((fun l -> let@ e, fields = parse_record_fields l om in Location.combine s e, Ast.RCons (Str i, fields)) <|> (fun _ -> Lexer.ok (s, Ast.Const (s, Udc (Str i))))) l
+    | s, DOT_SEP_IDENT is -> 
+      let is = List.map (fun i -> Str i) is in
+      Lexer.ok (s, Ast.Const (s, AccessIdent is))
     | s, LET -> parse_let l om s
     | s, IF -> parse_if l om s
     | s, FUN -> parse_lam l om s
@@ -448,32 +448,26 @@ module Parser = struct
       let@ e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
       Location.combine s e, Ast.List es
     | s, LPAREN ->
-      let* loc, expr = parse_expr l 0 om in
-      (match Lexer.current l with
-      | e, RPAREN ->
-        Lexer.skip ~am:1 l;
-        Lexer.ok (Location.combine s e, expr)
-      | _, COMMA ->
-        Lexer.skip ~am:1 l;
-        let* es = Lexer.separated_list l ~sep:COMMA (fun l -> parse_expr l 0 om) in
-        let@ e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple expression." in
-        Location.combine s e, (Ast.Tuple ((loc, expr) :: es))
-      | pos, tok ->
-        Lexer.make_err (Some pos, Printf.sprintf "Expected either ')' to end grouped expression or ',' to start tuple expression, but got '%s'." (Token.show tok)))
-    | s, KOP ->
-      let* _ = Lexer.consume l LPAREN "Expected '(' after 'op' keyword." in
-      let pos, next = Lexer.advance l in
-      (match next with
-       | o when Token.is_op o ->
-         let@ _ = Lexer.consume l RPAREN "Expected ')' after 'op' operator." in
-         let o = Str (Token.op_to_string o) in
-         Location.combine s pos, Ast.Const (s, Ident o)
-       | op ->
-         Lexer.make_err
-           ( Some pos
-           , Printf.sprintf
-               "Expected operator to follow 'op' keyword, but got '%s'."
-               (Token.show op) ))
+      let open Lexer in
+      ((fun l -> let* o = parse_user_op l in let@ e = Lexer.consume_with_pos l RPAREN "Expected ')' after prefix operator." in let loc = Location.combine s e in loc, Ast.Const (loc, Ident (Str o)))
+      <|>
+      (fun l -> 
+        let* loc, expr = parse_expr l 0 om in
+        (match Lexer.current l with
+        | e, RPAREN ->
+          Lexer.skip ~am:1 l;
+          Lexer.ok (Location.combine s e, expr)
+        | _, COMMA ->
+          Lexer.skip ~am:1 l;
+          let* es = Lexer.separated_list l ~sep:COMMA (fun l -> parse_expr l 0 om) in
+          let@ e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple expression." in
+          Location.combine s e, (Ast.Tuple ((loc, expr) :: es))
+        | pos, tok ->
+          Lexer.make_err (Some pos, Printf.sprintf "Expected either ')' to end grouped expression or ',' to start tuple expression, but got '%s'." (Token.show tok))))) l
+    | s, LBRACE ->
+      let* update = parse_record_update l om in
+      let@ e = Lexer.consume_with_pos l RBRACE "Expected '}' to end record update." in
+      Location.combine s e, update
     | pos, tok ->
       Lexer.make_err
         ( Some pos
@@ -535,6 +529,10 @@ module Parser = struct
           | _ -> Lexer.ok (s, Ast.Const (s, Udc (Str i)))
         in
         Lexer.ok @@ Ast.Ap (0, left, r)
+      | DOT_SEP_IDENT is ->
+        let is = List.map (fun i -> Str i) is in
+        let r = s, Ast.Const (s, AccessIdent is) in
+        Lexer.ok @@ Ast.Ap (0, left, r)
       | TTYPE ->
         (match Lexer.current l with
          | e, INT i -> Ast.Ap (0, left, (Location.combine s e, Ast.TypeLit (PUni i)))
@@ -545,24 +543,46 @@ module Parser = struct
         let@ e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
         Ast.Ap (0, left, (Location.combine s e, Ast.List es))
       | LPAREN ->
+        let open Lexer in
         let s = Lexer.current_pos l in
-        let* loc, expr = parse_expr l 0 om in
-        (match Lexer.current l with
-        | e, RPAREN ->
-          Lexer.skip ~am:1 l;
-          Lexer.ok @@ Ast.Ap (0, left, (Location.combine s e, expr))
-        | _, COMMA ->
-          Lexer.skip ~am:1 l;
-          let* es = Lexer.separated_list l ~sep:COMMA (fun l -> parse_expr l 0 om) in
-          let@ e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple expression." in
-          Ast.Ap (0, left, (Location.combine s e, (Ast.Tuple ((loc, expr) :: es))))
-        | pos, tok ->
-          Lexer.make_err (Some pos, Printf.sprintf "Expected either ')' to end grouped expression or ',' to start tuple expression, but got '%s'." (Token.show tok)))
+        ((fun l -> let* o = parse_user_op l in let@ e = Lexer.consume_with_pos l RPAREN "Expected ')' after prefix operator." in let loc = Location.combine s e in Ast.Ap (0, left, (loc, Ast.Const (loc, Ident (Str o)))))
+        <|>
+        (fun l ->
+          let* loc, expr = parse_expr l 0 om in
+          (match Lexer.current l with
+          | e, RPAREN ->
+            Lexer.skip ~am:1 l;
+            Lexer.ok @@ Ast.Ap (0, left, (Location.combine s e, expr))
+          | _, COMMA ->
+            Lexer.skip ~am:1 l;
+            let* es = Lexer.separated_list l ~sep:COMMA (fun l -> parse_expr l 0 om) in
+            let@ e = Lexer.consume_with_pos l RPAREN "Expected ')' to end tuple expression." in
+            Ast.Ap (0, left, (Location.combine s e, (Ast.Tuple ((loc, expr) :: es))))
+          | pos, tok ->
+            Lexer.make_err (Some pos, Printf.sprintf "Expected either ')' to end grouped expression or ',' to start tuple expression, but got '%s'." (Token.show tok))))) l
+      | LBRACE ->
+        let s = Lexer.current_pos l in
+        let* update = parse_record_update l om in
+        let@ e = Lexer.consume_with_pos l RBRACE "Expected '}' to end record update." in
+        Ast.Ap (0, left, (Location.combine s e, update))
       | op ->
         Lexer.make_err
           (Some s, Printf.sprintf "Expected binary operator, got '%s'." (Token.show op))
     in
     Location.combine s (Lexer.current_pos l), expr
+
+  and parse_record_update (l: Lexer.t) (om: operator_map) : Ast.expr Lexer.result =
+    let* i = parse_lower_ident l in
+    let* _ = Lexer.consume l WHERE "Expected 'where' after identifier in record update." in
+    let@ fields =
+      Lexer.separated_list l ~sep:SEMI 
+        (fun l -> 
+           let* id = parse_lower_ident l in 
+           let* _ = Lexer.consume l EQ "Expected a '=' to separate identifier and expression in record update." in
+           let@ v = parse_expr l 0 om in
+           id, v)
+    in
+    Ast.RUpdate (i, fields)
 
   and parse_let (l : Lexer.t) (om : operator_map) (s : Location.t) : Ast.located_expr Lexer.result =
     let* p = parse_pattern l in
@@ -744,7 +764,9 @@ module Parser = struct
   and parse_record (l: Lexer.t) (om: operator_map): (ident * Ast.tdecl_type) Lexer.result = 
     let* _ = Lexer.consume l RECORD "Expected record keyword." in
     let* ident = parse_upper_ident l in
-    let* _ = Lexer.consume l ASSIGNMENT "Expected a ':=' before record constructor." in
+    let* _ = Lexer.consume l COLON "Expected a ':' before record type signature." in
+    let* t = parse_expr l 0 om in
+    let* _ = Lexer.consume l EQ "Expected a '=' after record type signature." in
     let* cons = parse_upper_ident l in
     let parse_field l om =
       let* id = parse_lower_ident l in
@@ -755,7 +777,7 @@ module Parser = struct
     let* _ = Lexer.consume l LBRACE "Expected a '{' to begin record field declarations." in
     let* fields = Lexer.separated_list l ~sep:SEMI (Fun.flip parse_field om) in
     let@ _ = Lexer.consume l RBRACE "Expected a '}' to end record field declarations." in
-    ident, Ast.Record (cons, fields)
+    ident, Ast.Record (cons, t, fields)
   ;;
 
   let parse_module (l : Lexer.t) : ident Lexer.result =

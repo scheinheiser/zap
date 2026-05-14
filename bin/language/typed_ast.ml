@@ -52,15 +52,7 @@ let rec show_pat = function
   | _, PCtor (n, p) ->
     Format.asprintf "%a %s" pp_ident n (List.map show_pat p |> String.concat " ")
   | _, PTuple ps -> Printf.sprintf "(%s)" (List.map show_pat ps |> String.concat ", ")
-  | _, PConst (_, c) ->
-    (match c with
-     | Ident i | Udc i -> Format.asprintf "%a" pp_ident i
-     | Int i -> string_of_int i
-     | Float f -> string_of_float f
-     | Char c -> Char.escaped c
-     | String s -> s
-     | Unit -> "()"
-     | Bool b -> string_of_bool b)
+  | _, PConst c -> Format.asprintf "%a" pp_const c
 ;;
 
 (* pretty printing *)

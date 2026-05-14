@@ -1,7 +1,8 @@
 ## Design
 - [x] Redo type declaration syntax.
-- [x] Turn `PCons` into a general binary constructor construct.
+- [x] Turn `PCons` into a general binary construct.
 - [ ] Remove `CONS` and any builtin operator in favour of identifying it later on or something.
+- [ ] Implicit arguments
 - [ ] Properly desugar record constructors.
 
 ## Parser

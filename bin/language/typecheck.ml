@@ -40,7 +40,7 @@ let get_const_type (c : const) : prim =
   | Char _ -> PChar
   | Bool _ -> PBool
   | Unit -> PUnit
-  | Ident _ | Udc _ ->
+  | Ident _ | Udc _ | AccessIdent _ ->
     raise (Error.InternalError "called `get_const_type` on identifier.")
 ;;
 

@@ -16,6 +16,7 @@ and const =
   | Bool of bool
   | Unit
   | Ident of ident
+  | AccessIdent of ident list
   | Udc of ident (* user defined costructor *)
 
 type prim =

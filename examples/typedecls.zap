@@ -16,21 +16,27 @@
   | ( @: ) : a -> List a -> List a
 
 % the constructor is declared before the definition
-@record Person := MkPerson
+@record Person : (price: Type) -> Type = MkPerson
   { name   : String
   ; age    : Int
   ; status : IsWorker
-  ; basket : Basket
+  ; basket : Basket price
   }
 
 dec unsafeHead : (a : Type) -> List a -> a
 % def unsafeHead _ (h :: _) := h
 
 dec getPrice : (price : Type) -> Basket price -> p
-def getPrice (Apple p)  := p
-def getPrice (Banana p) := p
-def getPrice (l .: r)   := getPrice l + getPrice r
-def getPrice Bag        := 0
+def getPrice _ (Apple p)  := p
+def getPrice _ (Banana p) := p
+def getPrice _ (l .: r)   := getPrice l + getPrice r
+def getPrice _ Bag        := 0
 
-dec addEmployee : String -> Int -> Basket -> Person
-def addEmployee name age b := MkPerson { name = name; age = age; status = true; basket = b}
+dec addEmployee : (price: Type) -> String -> Int -> Basket price -> Person price
+def addEmployee _ name age b := MkPerson { name = name; age = age; status = true; basket = b}
+
+dec personBasketPrice : (a : Type) -> Person a -> a
+def personBasketPrice price p := getPrice price p.basket
+
+dec addItem : (a : Type) -> Person a -> Basket a -> Person a
+def addItem _ p item := { p where basket = item .: p.basket }

@@ -17,6 +17,7 @@ and const =
   | Bool of bool
   | Unit
   | Ident of ident
+  | AccessIdent of ident list
   | Udc of ident (* user defined costructor *)
 
 type prim =
@@ -91,6 +92,9 @@ let pp_const out ((_, c) : located_const) =
   | Bool b -> Format.fprintf out "%b" b
   | Unit -> Format.fprintf out "()"
   | Ident i | Udc i -> pp_ident out i
+  | AccessIdent is ->
+    let i = List.map get_str is |> String.concat "." in
+    Format.fprintf out "%s" i
 ;;
 
 let pp_binop out (b : binop) =

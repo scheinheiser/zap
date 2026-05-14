@@ -18,9 +18,10 @@ and token =
   | TY_ATOM
   | IDENT of string
   | UPPER_IDENT of string
+  | DOT_SEP_IDENT of string list
   | OP of string
-  | KOP
   | WHEN
+  | WHERE
   | WITH
   | MATCH
   | TO

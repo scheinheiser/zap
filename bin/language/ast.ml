@@ -32,7 +32,8 @@ and expr =
   | TypeLit of prim
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
-  | RCons of ident * (ident * located_expr) list (* MkRec { x₁ = y₁; ...; xₙ = yₙ } *)
+  | RCons of ident * (ident * located_expr) list (* cons { x₁ = y₁; ...; xₙ = yₙ } *)
+  | RUpdate of ident * (ident * located_expr) list (* { x where y₁ = z₁; ...; yₙ = zₙ } *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -40,7 +41,7 @@ and ty_decl = ident * tdecl_type
 and tdecl_type =
   | Alias of located_expr
   | Variant of located_expr * (ident * located_expr) list (* type signature and variants *)
-  | Record of ident * (ident * located_expr) list (* constructor name and fields *)
+  | Record of ident * located_expr * (ident * located_expr) list (* constructor name, type signature and fields *)
 
 type located_definition = Location.t * definition
 
@@ -160,7 +161,12 @@ let rec pp_expr out ((_, e) : located_expr) =
     let pp_field out (i, v) =
       Format.fprintf out "%a = %a" pp_ident i pp_expr v
     in
-    Format.fprintf out "%a{@[@,%a@]}" pp_ident i Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field) fields
+    Format.fprintf out "%a @[{@,%a@]}" pp_ident i Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field) fields
+  | RUpdate (i, fields) ->
+    let pp_field out (i, v) =
+      Format.fprintf out "%a = %a" pp_ident i pp_expr v
+    in
+    Format.fprintf out "{%a wh@[ere@,%a@]}" pp_ident i Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field) fields
 ;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
@@ -174,11 +180,12 @@ and pp_tdecl_type out (t : tdecl_type) =
   in
   match t with
   | Alias t -> pp_expr out t
-  | Record (cons, r) ->
+  | Record (cons, tsig, r) ->
     Format.fprintf
       out
-      "(re@[<v>cord %a@,%a@])"
+      "(re@[<v>cord %a { %a }@,%a@])"
       pp_ident cons
+      pp_expr tsig
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
   | Variant (tsig, v) ->

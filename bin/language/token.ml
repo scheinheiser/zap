@@ -18,9 +18,10 @@ and token =
   | TY_ATOM
   | IDENT of string
   | UPPER_IDENT of string
+  | DOT_SEP_IDENT of string list
   | OP of string
-  | KOP
   | WHEN
+  | WHERE
   | WITH
   | MATCH
   | TO
@@ -95,9 +96,10 @@ let show (t : token) : string =
   | TY_ATOM -> "TY_ATOM"
   | IDENT i -> sprintf "IDENT %s" i
   | UPPER_IDENT i -> sprintf "UPPER_IDENT %s" i
+  | DOT_SEP_IDENT i -> sprintf "DOT_SEP_IDENT %s" (String.concat "." i)
   | OP o -> sprintf "OP %s" o
-  | KOP -> "KOP"
   | WHEN -> "WHEN"
+  | WHERE -> "WHERE"
   | WITH -> "WITH"
   | MATCH -> "MATCH"
   | TO -> "TO"

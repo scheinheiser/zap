@@ -16,15 +16,12 @@
 
   let with_pos (l: lexbuf) (t: token) = Location.of_lexbuf l, t
 
-  let is_generic (i: string) =
-    match i.[0] with
-    | '\'' -> true
-    | _    -> false
-
   let is_upper (s: string) =
     match s.[0] with
     | 'A' .. 'Z' -> true
     | _ -> false
+
+  let is_dot_separated (s: string) = String.exists (( = ) '.') s
 
   let keywords = [
     ("if", IF);
@@ -48,6 +45,7 @@
     ("true", BOOL true);
     ("false", BOOL false);
     ("when", WHEN);
+    ("where", WHERE);
     ("match", MATCH);
     ("to", TO);
     ("dec", DEC);
@@ -60,7 +58,6 @@
     ("Type", TTYPE);
     ("forall", FORALL);
     ("fun", FUN);
-    ("op", KOP);
   ]
 
   let builtin_symbol = [
@@ -100,7 +97,7 @@ let op = ['+' '-' '!' '%' '^' '&' '*' '>' '<' '=' '/' '~' '#' '$' '.' '|' '@' ':
 let newline = '\n' | '\r' | "\r\n"
 let whitespace = [' ' '\t']+
 let str = ['a'-'z' 'A'-'Z' '0'-'9' '_' ' ' '\''] | symbol | newline
-let ident = ['a'-'z' 'A'-'Z'] ['a'- 'z' 'A'-'Z' '0'-'9' '_']*
+let ident = ['a'-'z' 'A'-'Z'] ['a'- 'z' 'A'-'Z' '0'-'9' '_' '.']*
 
 rule token = parse
   | whitespace  {token lexbuf}
@@ -117,7 +114,6 @@ rule token = parse
   | '|'         {with_pos lexbuf PIPE}
   | '%'         {skip_comment lexbuf}
   | "%{"        {skip_multiline_comment 0 lexbuf}
-  | '.'         {with_pos lexbuf DOT}
   | '`'         {with_pos lexbuf BTICK}
   | ':'         {with_pos lexbuf COLON}
   | ';'         {with_pos lexbuf SEMI}
@@ -133,9 +129,10 @@ rule token = parse
   | '\"'        {tokenize_string (Buffer.create 20) lexbuf}
   | ident as i
     {let tok = match (List.assoc_opt i keywords) with
-                | (Some t)               -> t
-                | None when is_upper i   -> UPPER_IDENT i
-                | None                   -> IDENT i
+                | (Some t)                     -> t
+                | None when is_upper i         -> UPPER_IDENT i
+                | None when is_dot_separated i -> DOT_SEP_IDENT (String.split_on_char '.' i)
+                | None                         -> IDENT i
       in with_pos lexbuf tok}
   | eof         {with_pos lexbuf EOF}
   | _ as c      {

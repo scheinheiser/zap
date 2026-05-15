@@ -22,3 +22,7 @@ let format_err ((loc, msg) : t) : string =
   | Some l -> Format.asprintf "[ERROR] %a; %s@." Location.pp_location l msg
   | None -> Format.asprintf "[ERROR]: %s@." msg
 ;;
+
+let report_err err =
+  pp_err Format.err_formatter err;
+  exit 1

@@ -3,7 +3,7 @@
 - [x] Turn `PCons` into a general binary construct.
 - [ ] Remove `CONS` and any builtin operator in favour of identifying it later on or something.
 - [ ] Implicit arguments
-- [ ] Properly desugar record constructors.
+- [x] Properly desugar record constructors.
 
 ## Parser
 - [x] Migrate from use of exceptions to a custom error type.
@@ -35,7 +35,7 @@ def sum =
     | 0 => 0
     | x :: xs => x + sum xs
 
-dec map : {A, B : Type } (A -> B) -> [A] -> [B]
+dec map : { A, B : Type } -> (A -> B) -> [A] -> [B]
 def map =
   fun f -> fun xs ->
     match (f, xs) to

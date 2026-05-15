@@ -26,14 +26,14 @@ and expr =
       * located_expr
       * located_expr (* let p₁ ... pₙ : <optional_ty> = e₁ in e₂ *)
   | Match of located_expr * (located_pattern * located_expr option * located_expr) list
-  | If of located_expr * located_expr * located_expr option
+  | If of located_expr * located_expr * located_expr
   | Lam of located_pattern list * located_expr
   | Const of located_const
   | TypeLit of prim
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
   | RCons of ident * (ident * located_expr) list (* cons { x₁ = y₁; ...; xₙ = yₙ } *)
-  | RUpdate of ident * (ident * located_expr) list (* { x where y₁ = z₁; ...; yₙ = zₙ } *)
+  | RUpdate of ident * ident * (ident * located_expr) list (* cons { x where y₁ = z₁; ...; yₙ = zₙ } *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -126,12 +126,9 @@ let rec pp_expr out ((_, e) : located_expr) =
     Format.fprintf
       out
       "(if@[<v> %a@,%a@,%a@])"
-      pp_expr
-      cond
-      pp_expr
-      tbranch
-      Format.(pp_print_option ~none:(fun out () -> fprintf out "<none>") pp_expr)
-      fbranch
+      pp_expr cond
+      pp_expr tbranch
+      pp_expr fbranch
   | Lam (args, body) ->
     Format.fprintf
       out
@@ -171,7 +168,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       i
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field)
       fields
-  | RUpdate (i, fields) ->
+  | RUpdate (_, i, fields) ->
     let pp_field out (i, v) = Format.fprintf out "%a = %a" pp_ident i pp_expr v in
     Format.fprintf
       out

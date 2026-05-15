@@ -394,6 +394,10 @@ module Parser = struct
       Lexer.skip ~am:1 l;
       let@ ((e, _) as next) = parse_pattern l in
       Location.combine s e, Ast.PBop (left, Str o, next)
+    | _, CONS ->
+      Lexer.skip ~am:1 l;
+      let@ ((e, _) as next) = parse_pattern l in
+      Location.combine s e, Ast.PBop (left, Str "::", next)
     | _ -> Lexer.ok left
   ;;
 
@@ -434,38 +438,29 @@ module Parser = struct
        | _ -> s, Ast.TypeLit (PUni 0) (* x : Type => x : Type 0 *))
       |> Lexer.ok
     | s, IDENT i ->
-      (match Lexer.current l with
-       | _, COLON ->
-         Lexer.skip ~am:1 l;
-         let@ ((e, _) as b) = parse_expr l 0 om in
-         Location.combine s e, Ast.Binding (Str i, b)
-       | _ -> Lexer.ok (s, Ast.Const (s, Ident (Str i))))
+      let open Lexer in
+      ((fun l ->
+        let* _ = Lexer.consume l COLON "Expected a ':' between identifier and type in binding." in
+        let@ (e, _) as t = parse_expr l 0 om in
+        Location.combine s e, Ast.Binding (Str i, t))
+      <|> fun _ -> Lexer.ok (s, Ast.Const (s, Ident (Str i))))
+        l
     | s, UPPER_IDENT i ->
       let open Lexer in
-      let parse_record_fields l om =
-        let* _ = consume l LBRACE "Expected a '{' to begin a record constructor." in
-        let* fields =
-          separated_list l ~sep:SEMI (fun l ->
-            let* id = parse_lower_ident l in
-            let* _ =
-              consume
-                l
-                EQ
-                "Expected a '=' to separate identifier and expression in record \
-                 construction."
-            in
-            let@ v = parse_expr l 0 om in
-            id, v)
-        in
-        let@ e =
-          consume_with_pos l RBRACE "Expected a '}' to end a record constructor."
-        in
-        e, fields
-      in
       ((fun l ->
-         let@ e, fields = parse_record_fields l om in
-         Location.combine s e, Ast.RCons (Str i, fields))
-       <|> fun _ -> Lexer.ok (s, Ast.Const (s, Udc (Str i))))
+        let@ e, existing_i, fields = parse_record_update l om in
+        Location.combine s e, Ast.RUpdate (Str i, existing_i, fields))
+        <|>
+      (fun l ->
+       let@ e, fields = parse_record_fields l om in
+       Location.combine s e, Ast.RCons (Str i, fields))
+        <|> 
+      (fun l -> 
+        let* _ = consume l COLON "Expected a ':' between identifier and type in binding." in
+        let@ (e, _) as t = parse_expr l 0 om in
+        Location.combine s e, Ast.Binding (Str i, t))
+        <|> 
+      fun _ -> ok (s, Ast.Const (s, Udc (Str i))))
         l
     | s, DOT_SEP_IDENT is ->
       let is = List.map (fun i -> Str i) is in
@@ -510,10 +505,6 @@ module Parser = struct
                 expression, but got '%s'."
                (Token.show tok) ))
         l
-    | s, LBRACE ->
-      let* update = parse_record_update l om in
-      let@ e = Lexer.consume_with_pos l RBRACE "Expected '}' to end record update." in
-      Location.combine s e, update
     | pos, tok ->
       Lexer.make_err
         ( Some pos
@@ -594,23 +585,35 @@ module Parser = struct
       | BOOL b -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Bool b))))
       | UNIT -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Unit))))
       | IDENT i ->
+        let open Lexer in
         let* r =
-          match Lexer.current l with
-          | _, COLON ->
-            Lexer.skip ~am:1 l;
-            let@ ((e, _) as b) = parse_expr l 0 om in
-            Location.combine s e, Ast.Binding (Str i, b)
-          | _ -> Lexer.ok (s, Ast.Const (s, Ident (Str i)))
+          ((fun l ->
+            let* _ = consume l COLON "Expected ':' to separate identifier and type in binding." in
+            let@ (e, _) as t = parse_expr l 0 om in
+            Location.combine s e, Ast.Binding (Str i, t))
+          <|>
+          (fun _ ->
+            ok (s, Ast.Const (s, Udc (Str i))))) l
         in
         Lexer.ok @@ Ast.Ap (0, left, r)
       | UPPER_IDENT i ->
+        let open Lexer in
         let* r =
-          match Lexer.current l with
-          | _, COLON ->
-            Lexer.skip ~am:1 l;
-            let@ ((e, _) as b) = parse_expr l 0 om in
-            Location.combine s e, Ast.Binding (Str i, b)
-          | _ -> Lexer.ok (s, Ast.Const (s, Udc (Str i)))
+          ((fun l ->
+            let@ e, existing_i, fields = parse_record_update l om in
+            Location.combine s e, Ast.RUpdate (Str i, existing_i, fields))
+          <|>
+          (fun l ->
+            let@ e, fields = parse_record_fields l om in
+            Location.combine s e, Ast.RCons (Str i, fields))
+          <|>
+          (fun l ->
+            let* _ = Lexer.consume l COLON "Expected ':' to separate identifier and type in binding." in
+            let@ (e, _) as t = parse_expr l 0 om in
+            Location.combine s e, Ast.Binding (Str i, t))
+          <|>
+          (fun _ ->
+            Lexer.ok (s, Ast.Const (s, Udc (Str i))))) l
         in
         Lexer.ok @@ Ast.Ap (0, left, r)
       | DOT_SEP_IDENT is ->
@@ -657,23 +660,35 @@ module Parser = struct
                   expression, but got '%s'."
                  (Token.show tok) ))
           l
-      | LBRACE ->
-        let s = Lexer.current_pos l in
-        let* update = parse_record_update l om in
-        let@ e = Lexer.consume_with_pos l RBRACE "Expected '}' to end record update." in
-        Ast.Ap (0, left, (Location.combine s e, update))
       | op ->
         Lexer.make_err
           (Some s, Printf.sprintf "Expected binary operator, got '%s'." (Token.show op))
     in
     Location.combine s (Lexer.current_pos l), expr
+  [@@ocamlformat "disable"]
 
-  and parse_record_update (l : Lexer.t) (om : operator_map) : Ast.expr Lexer.result =
+  and parse_record_fields (l : Lexer.t) (om : operator_map) : (Location.t * (ident * Ast.located_expr) list) Lexer.result =
+    let open Lexer in
+    let* _ = consume l LBRACE "Expected a '{' to begin a record constructor." in
+    let* fields =
+      separated_list l ~sep:SEMI (fun l ->
+        let* id = parse_lower_ident l in
+        let* _ = consume l EQ "Expected a '=' to separate identifier and expression in record construction." in
+        let@ v = parse_expr l 0 om in
+        id, v)
+    in
+    let@ e =
+      consume_with_pos l RBRACE "Expected a '}' to end a record constructor."
+    in
+    e, fields
+
+  and parse_record_update (l : Lexer.t) (om : operator_map) : (Location.t * ident * (ident * Ast.located_expr) list) Lexer.result =
+    let* _ = Lexer.consume l LBRACE "Expected '{' to begin record update." in
     let* i = parse_lower_ident l in
     let* _ =
       Lexer.consume l WHERE "Expected 'where' after identifier in record update."
     in
-    let@ fields =
+    let* fields =
       Lexer.separated_list l ~sep:SEMI (fun l ->
         let* id = parse_lower_ident l in
         let* _ =
@@ -685,7 +700,8 @@ module Parser = struct
         let@ v = parse_expr l 0 om in
         id, v)
     in
-    Ast.RUpdate (i, fields)
+    let@ e = Lexer.consume_with_pos l RBRACE "Expected '}' to end record update." in
+    e, i, fields
 
   and parse_let (l : Lexer.t) (om : operator_map) (s : Location.t)
     : Ast.located_expr Lexer.result
@@ -719,14 +735,8 @@ module Parser = struct
       Lexer.consume l THEN "Expected 'then' keyword after if statement condition."
     in
     let* texpr = parse_expr l 0 om in
-    let@ fexpr, e =
-      match Lexer.current l with
-      | _, ELSE ->
-        Lexer.skip ~am:1 l;
-        let@ e = parse_expr l 0 om in
-        Some e, Lexer.current_pos l
-      | e, _ -> Lexer.ok (None, e)
-    in
+    let* _ = Lexer.consume l ELSE "Expected 'else' keyword to begin alternate branch." in
+    let@ (e, _) as fexpr = parse_expr l 0 om in
     Location.combine s e, Ast.If (cond, texpr, fexpr)
 
   and parse_lam (l : Lexer.t) (om : operator_map) (s : Location.t)
@@ -961,14 +971,15 @@ module Parser = struct
   let parse_toplvl (l : Lexer.t) (om : operator_map) : Ast.top_lvl Lexer.result =
     match Lexer.current l with
     | _, ATSIGN ->
-      Lexer.attempt
-        l
-        (fun l ->
-           let@ i = parse_import l in
-           Ast.TImport i)
-        (fun l ->
-           let@ t = parse_tydecl l om in
-           Ast.TTyDecl t)
+      let open Lexer in
+      ((fun l ->
+         let@ i = parse_import l in
+         Ast.TImport i)
+      <|>
+      (fun l ->
+         let@ t = parse_tydecl l om in
+         Ast.TTyDecl t))
+      l
     | _, DEC ->
       let@ d = parse_dec l om in
       Ast.TDef d

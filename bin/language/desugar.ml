@@ -1,6 +1,8 @@
 open Util
 open Primitive
 
+let flip = Fun.flip
+
 (* desugared syntax *)
 type located_pattern = Location.t * pattern
 
@@ -81,6 +83,9 @@ let rec equal_pattern ((_, l) : located_pattern) ((_, r) : located_pattern) : bo
 
 and ( $= ) l r = equal_pattern l r
 
+(* record constructor and fields in order *)
+type record_info = ident * (ident list)
+
 (* desugaring *)
 let fresh_pattern_ident =
   let i = ref (-1) in
@@ -111,59 +116,56 @@ let rec desugar_pat ((loc, e) : Ast.located_pattern) : located_pattern =
 ;;
 
 (* desugar a given surface syntax construct to its core grammar equivalent *)
-let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
+let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : located_expr =
   let desugar_abs l r cons =
-    let l = desugar_expr l in
-    let r = desugar_expr r in
+    let l = desugar_expr l ri in
+    let r = desugar_expr r ri in
     cons l r
   in
   match e with
   | Ast.Const c -> loc, Const c
   | Ast.TypeLit t -> loc, TypeLit t
-  | Ast.Binding (i, e) -> loc, Binding (i, desugar_expr e)
+  | Ast.Binding (i, e) -> loc, Binding (i, desugar_expr e ri)
   | Ast.Bop (l, op, r) -> desugar_abs l r (fun l r -> loc, Bop (l, op, r))
   | Ast.Ap (b, l, r) -> desugar_abs l r (fun l r -> loc, Ap (b, l, r))
   | Ast.Pi (l, r) -> desugar_abs l r (fun l r -> loc, Pi (l, r))
   | Ast.List es ->
+    (* [ x₁; ...; xₙ ] ==> x₁ :: ... :: xₙ :: [] *) 
     List.fold_right
       (fun n acc ->
-         let n = desugar_expr n in
+         let n = desugar_expr n ri in
          loc, Bop (n, Cons, acc))
       es
       (loc, Const (loc, Udc (Str "[]")))
-  | Ast.Tuple es -> loc, Tuple (List.map desugar_expr es)
+  | Ast.Tuple es -> loc, Tuple (List.map (flip desugar_expr ri) es)
   | Ast.Let (p, t, e, n) ->
     let p = desugar_pat p in
-    let t = Base.Option.map ~f:desugar_expr t in
-    let e = desugar_expr e in
-    let n = desugar_expr n in
+    let t = Base.Option.map ~f:(flip desugar_expr ri) t in
+    let e = desugar_expr e ri in
+    let n = desugar_expr n ri in
     loc, Let (p, t, e, n)
   | Ast.If (c, t, f) ->
     (* if statements are converted into 1/2 branch match statements *)
-    let c = desugar_expr c in
-    let t = desugar_expr t in
+    let c = desugar_expr c ri in
+    let t = desugar_expr t ri in
     let branches =
+      let f = desugar_expr f ri in
       let tp = loc, PConst (loc, Bool true) in
-      let tb = tp, None, t in
-      match f with
-      | None -> [ tb ]
-      | Some f ->
-        let f = desugar_expr f in
-        let fp = loc, PConst (loc, Bool false) in
-        [ tb; fp, None, f ]
+      let fp = loc, PConst (loc, Bool false) in
+      [ tp, None, t; fp, None, f ]
     in
     loc, Match (c, branches)
   | Ast.Match (c, branches) ->
-    let c = desugar_expr c in
+    let c = desugar_expr c ri in
     let branches =
       List.map
         (fun (cond, wb, b) ->
-           desugar_pat cond, Base.Option.map ~f:desugar_expr wb, desugar_expr b)
+           desugar_pat cond, Base.Option.map ~f:(flip desugar_expr ri) wb, desugar_expr b ri)
         branches
     in
     loc, Match (c, branches)
   | Ast.Lam (ps, b) ->
-    let b = desugar_expr b in
+    let b = desugar_expr b ri in
     (match ps with
      | [] ->
        raise (Error.InternalError "Internal error - no arguments to a lambda function.")
@@ -179,42 +181,66 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) : located_expr =
          b
          (List.rev ps))
   | Ast.RCons (i, fields) ->
-    (*TODO: here we assume that the fields have been put in the correct order. need to make it order-agnostic somehow. *)
     (* cons { x₁ = y₁; ...; xₙ = yₙ }  ==> cons y₁ .. yₙ *)
+    (* we pick the record fields from the info list to get the correctly ordered fields *)
+    let ofields = 
+      match List.assoc_opt i ri with
+      | Some r -> r
+      | None -> Error.report_err (Some loc, Printf.sprintf "Undefined record constructor - '%s'." (get_str i))
+    in
+    let desugared_fields =
+      List.map
+      (fun i -> 
+        match List.assoc_opt i fields with 
+        | Some e -> desugar_expr e ri
+        | None ->
+          Error.report_err (Some loc, Printf.sprintf "Uninitialised record field - '%s'." (get_str i)))
+      ofields
+    in
     List.fold_left
-      (fun acc (_, n) ->
-         let n = desugar_expr n in
-         loc, Ap (0, acc, n))
+      (fun acc e -> loc, Ap (0, acc, e))
       (loc, Const (loc, Udc i))
-      fields
-  | Ast.RUpdate (i, fields) ->
-    (*TODO: need a way to get the fields from the record type so that it can be added at the same time. *)
+      desugared_fields
+  | Ast.RUpdate (i, existing_i, fields) ->
     (* { x where y₁ = z₁; ...; yₙ = zₙ } ==> cons z₁ ... zₙ ; any missing fields are filled in with x.yₙ *)
+    let ofields = 
+      match List.assoc_opt i ri with
+      | Some r -> r
+      | None -> Error.report_err (Some loc, Printf.sprintf "Undefined record constructor - '%s'." (get_str i))
+    in
+    let desugared_fields =
+      List.map
+      (fun i -> 
+        match List.assoc_opt i fields with 
+        | Some e -> desugar_expr e ri
+        | None ->
+          let existing_id = (get_str_combine existing_i) :: (String.split_on_char '.' (get_str_combine i)) in
+          loc, Const (loc, AccessIdent (List.map (fun i -> Str i) existing_id)))
+      ofields
+    in
     List.fold_left
-      (fun acc (_, n) ->
-         let n = desugar_expr n in
-         loc, Ap (0, acc, n))
+      (fun acc n -> loc, Ap (0, acc, n))
       (loc, Const (loc, Udc i))
-      fields
+      desugared_fields
 ;;
 
-let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) : located_ty_decl =
-  let desugar_assoc ts = List.map (fun (i, e) -> i, desugar_expr e) ts in
+let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) (ri : record_info list) : located_ty_decl =
+  let desugar_assoc ts ri = List.map (fun (i, e) -> i, desugar_expr e ri) ts in
   match decl with
-  | Ast.Alias t -> loc, (i, Alias (desugar_expr t))
-  | Ast.Variant (tsig, ts) -> loc, (i, Variant (desugar_expr tsig, desugar_assoc ts))
+  | Ast.Alias t -> loc, (i, Alias (desugar_expr t ri))
+  | Ast.Variant (tsig, ts) -> loc, (i, Variant (desugar_expr tsig ri, desugar_assoc ts ri))
   | Ast.Record (cons, tsig, ts) ->
-    loc, (i, Record (cons, desugar_expr tsig, desugar_assoc ts))
+    loc, (i, Record (cons, desugar_expr tsig ri, desugar_assoc ts ri))
 ;;
 
-let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
+let rec desugar_def ((loc, d) : Ast.located_definition) (ri : record_info list) : located_definition =
   match d with
-  | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e)
+  | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e ri)
   | Ast.Def (i, args, when_block, b, with_block) ->
     let args = List.map desugar_pat args in
-    let when_block = Base.Option.map ~f:desugar_expr when_block in
-    let b = desugar_expr b in
-    let with_block = List.map desugar_def with_block in
+    let when_block = Base.Option.map ~f:(flip desugar_expr ri) when_block in
+    let b = desugar_expr b ri in
+    let with_block = List.map (flip desugar_def ri) with_block in
     loc, Def (i, args, when_block, b, with_block)
 
 (*
@@ -222,7 +248,6 @@ let rec desugar_def ((loc, d) : Ast.located_definition) : located_definition =
     def map _ [] := []
     def map f (x :: xs) := f x :: map f xs
 
-                  ||
                   ||
                   \/
 
@@ -238,17 +263,13 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
       match ds with
       | ((_, Dec _) as d) :: ds -> group_defs ds (d :: failed_acc) acc
       | ((loc, Def (i', args', wb, b, wb')) as failed) :: ds ->
+        (* if the functions have the same identifier and argument count, we check that their patterns match. *)
+        (* any successful matches are removed from the definition list so that they aren't checked again. *)
         let success = loc, (i', args', wb, b, wb') in
         let equal_i = get_str_combine i = get_str_combine i' in
         let equal_arg_c = List.length args = List.length args' in
-        if equal_i && equal_arg_c
-        then
-          if
-            (* if the functions have the same identifier and argument count, we check that their patterns match. *)
-            (* any successful matches are removed from the definition list so that they aren't checked again. *)
-            List.for_all2 ( $= ) args args
-          then group_defs ds failed_acc (success :: acc)
-          else group_defs ds (failed :: failed_acc) acc
+        if equal_i && equal_arg_c && List.for_all2 ( $= ) args args
+        then group_defs ds failed_acc (success :: acc)
         else group_defs ds (failed :: failed_acc) acc
       | [] -> failed_acc, acc
     in
@@ -281,8 +302,18 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
 ;;
 
 let desugar_program ((i, imps, decls, defs) : Ast.program) : program =
+  let decls = List.map (flip desugar_ty_decl []) decls in
+  let ri : record_info list = 
+    let rec go l acc =
+      match l with
+      | [] -> acc
+      | (_, (_, Record (i, _, fields))) :: t -> go t ((i, List.map fst fields) :: acc)
+      | _ :: t -> go t acc
+    in
+    go decls []
+  in
   let defs =
-    let defs = List.map desugar_def defs in
+    let defs = List.map (flip desugar_def ri) defs in
     let rec without_matches ds acc =
       match ds with
       | [] -> acc
@@ -293,7 +324,7 @@ let desugar_program ((i, imps, decls, defs) : Ast.program) : program =
     in
     without_matches defs []
   in
-  i, imps, List.map desugar_ty_decl decls, defs
+  i, imps, decls, defs
 ;;
 
 (* pretty printing *)

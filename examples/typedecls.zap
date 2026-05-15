@@ -8,12 +8,14 @@
   | Apple    : price -> Basket price % explicit type signature for variants.
   | Banana   : price -> Basket price
   | Bag      : Basket price % empty variant
-  | ( .: )   : Basket price -> Basket price -> Basket price % recursive, operator constructor.
+  | ( :. )   : Basket price -> Basket price -> Basket price % recursive, operator constructor.
+@rassoc 7 :.
 
 % unions can contain only operator constructors.
 @union List : (a: Type) -> Type =
   | Nil    : List a
   | ( @: ) : a -> List a -> List a
+@rassoc 7 @:
 
 % the constructor is declared before the definition
 @record Person : (price: Type) -> Type = MkPerson
@@ -24,7 +26,7 @@
   }
 
 dec unsafeHead : (a : Type) -> List a -> a
-% def unsafeHead _ (h :: _) := h
+def unsafeHead _ (h :: _) := h
 
 dec getPrice : (price : Type) -> Basket price -> p
 def getPrice _ (Apple p)  := p
@@ -33,10 +35,10 @@ def getPrice _ (l .: r)   := getPrice l + getPrice r
 def getPrice _ Bag        := 0
 
 dec addEmployee : (price: Type) -> String -> Int -> Basket price -> Person price
-def addEmployee _ name age b := MkPerson { name = name; age = age; status = true; basket = b}
+def addEmployee _ name age b := MkPerson { age = age; name = name; basket = b; status = true}
 
 dec personBasketPrice : (a : Type) -> Person a -> a
 def personBasketPrice price p := getPrice price p.basket
 
 dec addItem : (a : Type) -> Person a -> Basket a -> Person a
-def addItem _ p item := { p where basket = item .: p.basket }
+def addItem _ p item := MkPerson { p where basket = item :. p.basket }

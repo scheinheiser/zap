@@ -26,3 +26,4 @@ let format_err ((loc, msg) : t) : string =
 let report_err err =
   pp_err Format.err_formatter err;
   exit 1
+;;

@@ -33,7 +33,10 @@ and expr =
   | Binding of ident * located_expr (* x : T *)
   | Pi of located_expr * located_expr
   | RCons of ident * (ident * located_expr) list (* cons { x₁ = y₁; ...; xₙ = yₙ } *)
-  | RUpdate of ident * ident * (ident * located_expr) list (* cons { x where y₁ = z₁; ...; yₙ = zₙ } *)
+  | RUpdate of
+      ident
+      * ident
+      * (ident * located_expr) list (* cons { x where y₁ = z₁; ...; yₙ = zₙ } *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -126,9 +129,12 @@ let rec pp_expr out ((_, e) : located_expr) =
     Format.fprintf
       out
       "(if@[<v> %a@,%a@,%a@])"
-      pp_expr cond
-      pp_expr tbranch
-      pp_expr fbranch
+      pp_expr
+      cond
+      pp_expr
+      tbranch
+      pp_expr
+      fbranch
   | Lam (args, body) ->
     Format.fprintf
       out

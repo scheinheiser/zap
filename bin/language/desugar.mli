@@ -51,6 +51,9 @@ and with_block = located_definition list
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
+type record_info = ident * ident list
+
+val desugar_expr : Ast.located_expr -> record_info list -> located_expr
 val desugar_program : Ast.program -> program
 val pp_pattern : Format.formatter -> located_pattern -> unit
 val pp_expr : Format.formatter -> located_expr -> unit

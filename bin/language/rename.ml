@@ -54,18 +54,23 @@ end = struct
   let rename_list ~(f : 'b VM.t -> 'a -> 'a * 'b VM.t) (env : 'b VM.t) (l : 'a list)
     : 'a list * 'b VM.t
     =
-    let rec go acc e = function
-      | [] -> List.rev acc, e
-      | h :: t ->
-        let h', e' = f e h in
-        go (h' :: acc) e' t
+    let (e, v) : 'b VM.t * 'a list =
+      List.fold_left_map
+        (fun e v ->
+           let v, e = f e v in
+           e, v)
+        env
+        l
     in
-    go [] env l
+    v, e
   ;;
 
   let rec find_ident ((_, e) : located_expr) : string =
     match e with
     | Const (_, Ident i) -> get_str_combine i
+    | Const (_, AccessIdent i) -> List.rev i |> List.hd |> get_str_combine
+    | Const (_, Udc i) -> get_str_combine i
+    | Binding (i, _) -> get_str_combine i
     | Ap (_, l, _) -> find_ident l
     | _ -> ""
   ;;
@@ -74,11 +79,25 @@ end = struct
     : located_pattern * ident VM.t
     =
     match pat with
-    | PConst (s, Ident i) ->
+    | PConst (s, Ident i) when not @@ String.starts_with ~prefix:"__match__" (get_str i)
+      ->
       let i = get_str i in
       let i' = fresh_alpha i in
       let env = VM.add i i' env in
       (loc, PConst (s, Ident i')), env
+    | PConst (s, AccessIdent is) ->
+      let is = List.map get_str is in
+      let is' = List.map fresh_alpha is in
+      let env =
+        List.fold_left2
+          (fun env i i' ->
+             let env = VM.add i i' env in
+             env)
+          env
+          is
+          is'
+      in
+      (loc, PConst (s, AccessIdent is')), env
     | PConst _ -> (loc, pat), env
     | PWild -> (loc, pat), env
     | PBop (l, op, r) ->
@@ -103,32 +122,45 @@ end = struct
     =
     match expr with
     | Const (s, Ident i) ->
-      (match VM.find_opt (get_str i) env with
-       | Some i' -> (loc, Const (s, Ident i')), env
-       | None -> (loc, Const (s, Ident i)), env)
+      let i' = get_str i in
+      (match VM.find_opt i' env with
+       | Some i when not @@ String.starts_with ~prefix:"__match__" i' ->
+         (loc, Const (s, Ident i)), env
+       | _ -> (loc, Const (s, Ident i)), env)
+    | Const (s, AccessIdent is) ->
+      let is =
+        List.map
+          (fun i ->
+             match VM.find_opt (get_str i) env with
+             | Some i -> i
+             | None -> i)
+          is
+      in
+      (loc, Const (s, AccessIdent is)), env
     | Const _ -> (loc, expr), env
     | Bop (l, op, r) ->
-      let l', env' = rename_expr env l in
-      let r', env'' = rename_expr env' r in
+      let l, env = rename_expr env l in
+      let r, env = rename_expr env r in
       (match op with
        | User_op i ->
          (match VM.find_opt (get_str i) env with
-          | Some i' -> (loc, Bop (l', User_op i', r')), env
-          | None -> (loc, Bop (l', op, r')), env)
-       | _ -> (loc, Bop (l', op, r')), env'')
+          | Some i -> (loc, Bop (l, User_op i, r)), env
+          | None -> (loc, Bop (l, op, r)), env)
+       | _ -> (loc, Bop (l, op, r)), env)
     | Ap (_, l, r) ->
-      let l', env'' = rename_expr env l in
-      let r', env' = rename_expr env r in
-      let i = find_ident l' in
+      let l, env = rename_expr env l in
+      let r, env = rename_expr env r in
+      let i = find_ident l in
       (match Base.List.Assoc.find builtins ~equal:Base.String.( = ) i with
-       | Some b -> (loc, Ap (b, l', r')), env'
-       | None -> (loc, Ap (fresh_binder (), l', r')), env'')
+       | Some b -> (loc, Ap (b, l, r)), env
+       | None -> (loc, Ap (fresh_binder (), l, r)), env)
     | Tuple es ->
       let es, env = rename_list ~f:rename_expr env es in
       (loc, Tuple es), env
     | Let (p, t, expr, n) ->
       let rec collect_idents acc = function
         | _, PConst (_, Ident i) -> i :: acc
+        | _, PConst (_, AccessIdent is) -> is @ acc
         | _, PBop (l, _, r) -> collect_idents acc l |> Fun.flip collect_idents r
         | _, PCtor (_, ps) ->
           let rec go a = function
@@ -170,7 +202,7 @@ end = struct
       let bs =
         List.map
           (fun (p, wb, expr) ->
-             let p, _ = rename_pattern env p in
+             let p, env = rename_pattern env p in
              let wb = Base.Option.map wb ~f:(Fun.compose fst (rename_expr env)) in
              let expr, _ = rename_expr env expr in
              p, wb, expr)
@@ -178,57 +210,82 @@ end = struct
       in
       (loc, Match (e, bs)), env
     | TypeLit p -> (loc, TypeLit p), env
-    | Binding (i, e) -> (loc, Binding (i, e)), env (*TODO: cover this case *)
+    | Binding (i, e) ->
+      let i = get_str i in
+      let i' = fresh_alpha i in
+      let env = VM.add i i' env in
+      (loc, Binding (i', e)), env
     | Pi (l, r) ->
-      let l, env' = rename_expr env l in
-      let r, _ = rename_expr env' r in
+      let l, env = rename_expr env l in
+      let r, env = rename_expr env r in
       (loc, Pi (l, r)), env
   ;;
 
-  let rec rename_definition (env : ident VM.t) ((loc, d) : located_definition)
-    : located_definition * ident VM.t
+  let rec rename_definition
+            ((defenv, varenv) : ident VM.t * ident VM.t)
+            ((loc, d) : located_definition)
+    : located_definition * (ident VM.t * ident VM.t)
     =
+    let combine e1 e2 = VM.of_list @@ VM.to_list e1 @ VM.to_list e2 in
     match d with
     | Dec (i, sig') ->
-      let i, env =
+      let i, defenv =
         if get_str i = "main"
-        then i, env
+        then i, defenv
         else (
           let i = get_str i in
-          let i' = fresh_alpha i in
-          let env' = VM.add i i' env in
-          i', env')
-      in
-      let sig', _ = rename_expr env sig' in
-      (loc, Dec (i, sig')), env
-    | Def (i, args, when_block, body, with_block) ->
-      let i, env =
-        if get_str i = "main"
-        then i, env
-        else (
-          let i = get_str i in
-          match VM.find_opt i env with
-          | Some i' -> i', env
+          match VM.find_opt i defenv with
+          | Some i' -> i', defenv
           | _ ->
             let i' = fresh_alpha i in
-            let env' = VM.add i i' env in
-            i', env')
+            let defenv = VM.add i i' defenv in
+            i', defenv)
       in
-      let args, env = rename_list ~f:rename_pattern env args in
-      (match when_block with
-       | Some wb ->
-         let t, e = rename_expr env wb in
-         Some t, e
-       | None -> None, env)
-      |> fun (when_block, env) ->
-      rename_list ~f:rename_definition env with_block
-      |> fun (with_block, env) ->
-      let body, env = rename_expr env body in
-      (loc, Def (i, args, when_block, body, with_block)), env
+      let sig', _ = rename_expr (combine defenv varenv) sig' in
+      (loc, Dec (i, sig')), (defenv, varenv)
+    | Def (i, args, when_block, body, with_block) ->
+      let i, defenv =
+        if get_str i = "main"
+        then i, defenv
+        else (
+          let i = get_str i in
+          match VM.find_opt i defenv with
+          | Some i -> i, defenv
+          | _ ->
+            let i' = fresh_alpha i in
+            let defenv = VM.add i i' defenv in
+            i', defenv)
+      in
+      let args, env = rename_list ~f:rename_pattern (combine defenv varenv) args in
+      let when_block, env =
+        match when_block with
+        | Some wb ->
+          let t, e = rename_expr env wb in
+          Some t, e
+        | None -> None, env
+      in
+      let with_block, env =
+        rename_list
+          ~f:(fun env d ->
+            let def, (env, _) = rename_definition (env, fresh_env ()) d in
+            def, env)
+          env
+          with_block
+      in
+      let body, _ = rename_expr env body in
+      (loc, Def (i, args, when_block, body, with_block)), (defenv, varenv)
   ;;
 
   let rename_program ((prog_name, imps, tys, defs) : program) : program =
-    let defs = rename_list ~f:rename_definition (fresh_env ()) defs |> fst in
+    let defs =
+      rename_list
+        ~f:(fun env d ->
+          let def, (env, _) = rename_definition (env, fresh_env ()) d in
+          def, env)
+        (fresh_env ())
+        defs
+      |> fst
+    in
     prog_name, imps, tys, defs
   ;;
 end

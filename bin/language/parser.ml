@@ -440,27 +440,28 @@ module Parser = struct
     | s, IDENT i ->
       let open Lexer in
       ((fun l ->
-        let* _ = Lexer.consume l COLON "Expected a ':' between identifier and type in binding." in
-        let@ (e, _) as t = parse_expr l 0 om in
-        Location.combine s e, Ast.Binding (Str i, t))
-      <|> fun _ -> Lexer.ok (s, Ast.Const (s, Ident (Str i))))
+         let* _ =
+           Lexer.consume l COLON "Expected a ':' between identifier and type in binding."
+         in
+         let@ ((e, _) as t) = parse_expr l 0 om in
+         Location.combine s e, Ast.Binding (Str i, t))
+       <|> fun _ -> Lexer.ok (s, Ast.Const (s, Ident (Str i))))
         l
     | s, UPPER_IDENT i ->
       let open Lexer in
       ((fun l ->
-        let@ e, existing_i, fields = parse_record_update l om in
-        Location.combine s e, Ast.RUpdate (Str i, existing_i, fields))
-        <|>
-      (fun l ->
+         let@ e, existing_i, fields = parse_record_update l om in
+         Location.combine s e, Ast.RUpdate (Str i, existing_i, fields))
+       <|> (fun l ->
        let@ e, fields = parse_record_fields l om in
        Location.combine s e, Ast.RCons (Str i, fields))
-        <|> 
-      (fun l -> 
-        let* _ = consume l COLON "Expected a ':' between identifier and type in binding." in
-        let@ (e, _) as t = parse_expr l 0 om in
-        Location.combine s e, Ast.Binding (Str i, t))
-        <|> 
-      fun _ -> ok (s, Ast.Const (s, Udc (Str i))))
+       <|> (fun l ->
+       let* _ =
+         consume l COLON "Expected a ':' between identifier and type in binding."
+       in
+       let@ ((e, _) as t) = parse_expr l 0 om in
+       Location.combine s e, Ast.Binding (Str i, t))
+       <|> fun _ -> ok (s, Ast.Const (s, Udc (Str i))))
         l
     | s, DOT_SEP_IDENT is ->
       let is = List.map (fun i -> Str i) is in
@@ -593,7 +594,7 @@ module Parser = struct
             Location.combine s e, Ast.Binding (Str i, t))
           <|>
           (fun _ ->
-            ok (s, Ast.Const (s, Udc (Str i))))) l
+            ok (s, Ast.Const (s, Ident (Str i))))) l
         in
         Lexer.ok @@ Ast.Ap (0, left, r)
       | UPPER_IDENT i ->
@@ -769,7 +770,6 @@ module Parser = struct
     Lexer.consume_opt l PIPE;
     let@ branches = Lexer.separated_list l ~sep:PIPE go in
     Location.combine s (Lexer.current_pos l), Ast.Match (expr, branches)
-  ;;
 
   let rec parse_definition (l : Lexer.t) (om : operator_map)
     : Ast.located_definition Lexer.result
@@ -975,11 +975,10 @@ module Parser = struct
       ((fun l ->
          let@ i = parse_import l in
          Ast.TImport i)
-      <|>
-      (fun l ->
-         let@ t = parse_tydecl l om in
-         Ast.TTyDecl t))
-      l
+       <|> fun l ->
+       let@ t = parse_tydecl l om in
+       Ast.TTyDecl t)
+        l
     | _, DEC ->
       let@ d = parse_dec l om in
       Ast.TDef d

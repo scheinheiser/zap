@@ -28,10 +28,10 @@
 dec unsafeHead : (a : Type) -> List a -> a
 def unsafeHead _ (h :: _) := h
 
-dec getPrice : (price : Type) -> Basket price -> p
+dec getPrice : (price : Type) -> Basket price -> price
 def getPrice _ (Apple p)  := p
 def getPrice _ (Banana p) := p
-def getPrice _ (l .: r)   := getPrice l + getPrice r
+def getPrice _ (l :. r)   := getPrice l + getPrice r
 def getPrice _ Bag        := 0
 
 dec addEmployee : (price: Type) -> String -> Int -> Basket price -> Person price

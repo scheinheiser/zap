@@ -84,7 +84,7 @@ let rec equal_pattern ((_, l) : located_pattern) ((_, r) : located_pattern) : bo
 and ( $= ) l r = equal_pattern l r
 
 (* record constructor and fields in order *)
-type record_info = ident * (ident list)
+type record_info = ident * ident list
 
 (* desugaring *)
 let fresh_pattern_ident =
@@ -130,7 +130,7 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
   | Ast.Ap (b, l, r) -> desugar_abs l r (fun l r -> loc, Ap (b, l, r))
   | Ast.Pi (l, r) -> desugar_abs l r (fun l r -> loc, Pi (l, r))
   | Ast.List es ->
-    (* [ x₁; ...; xₙ ] ==> x₁ :: ... :: xₙ :: [] *) 
+    (* [ x₁; ...; xₙ ] ==> x₁ :: ... :: xₙ :: [] *)
     List.fold_right
       (fun n acc ->
          let n = desugar_expr n ri in
@@ -160,7 +160,9 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
     let branches =
       List.map
         (fun (cond, wb, b) ->
-           desugar_pat cond, Base.Option.map ~f:(flip desugar_expr ri) wb, desugar_expr b ri)
+           ( desugar_pat cond
+           , Base.Option.map ~f:(flip desugar_expr ri) wb
+           , desugar_expr b ri ))
         branches
     in
     loc, Match (c, branches)
@@ -183,19 +185,22 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
   | Ast.RCons (i, fields) ->
     (* cons { x₁ = y₁; ...; xₙ = yₙ }  ==> cons y₁ .. yₙ *)
     (* we pick the record fields from the info list to get the correctly ordered fields *)
-    let ofields = 
+    let ofields =
       match List.assoc_opt i ri with
       | Some r -> r
-      | None -> Error.report_err (Some loc, Printf.sprintf "Undefined record constructor - '%s'." (get_str i))
+      | None ->
+        Error.report_err
+          (Some loc, Printf.sprintf "Undefined record constructor - '%s'." (get_str i))
     in
     let desugared_fields =
       List.map
-      (fun i -> 
-        match List.assoc_opt i fields with 
-        | Some e -> desugar_expr e ri
-        | None ->
-          Error.report_err (Some loc, Printf.sprintf "Uninitialised record field - '%s'." (get_str i)))
-      ofields
+        (fun i ->
+           match List.assoc_opt i fields with
+           | Some e -> desugar_expr e ri
+           | None ->
+             Error.report_err
+               (Some loc, Printf.sprintf "Uninitialised record field - '%s'." (get_str i)))
+        ofields
     in
     List.fold_left
       (fun acc e -> loc, Ap (0, acc, e))
@@ -203,20 +208,24 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
       desugared_fields
   | Ast.RUpdate (i, existing_i, fields) ->
     (* { x where y₁ = z₁; ...; yₙ = zₙ } ==> cons z₁ ... zₙ ; any missing fields are filled in with x.yₙ *)
-    let ofields = 
+    let ofields =
       match List.assoc_opt i ri with
       | Some r -> r
-      | None -> Error.report_err (Some loc, Printf.sprintf "Undefined record constructor - '%s'." (get_str i))
+      | None ->
+        Error.report_err
+          (Some loc, Printf.sprintf "Undefined record constructor - '%s'." (get_str i))
     in
     let desugared_fields =
       List.map
-      (fun i -> 
-        match List.assoc_opt i fields with 
-        | Some e -> desugar_expr e ri
-        | None ->
-          let existing_id = (get_str_combine existing_i) :: (String.split_on_char '.' (get_str_combine i)) in
-          loc, Const (loc, AccessIdent (List.map (fun i -> Str i) existing_id)))
-      ofields
+        (fun i ->
+           match List.assoc_opt i fields with
+           | Some e -> desugar_expr e ri
+           | None ->
+             let existing_id =
+               get_str_combine existing_i :: String.split_on_char '.' (get_str_combine i)
+             in
+             loc, Const (loc, AccessIdent (List.map (fun i -> Str i) existing_id)))
+        ofields
     in
     List.fold_left
       (fun acc n -> loc, Ap (0, acc, n))
@@ -224,7 +233,9 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
       desugared_fields
 ;;
 
-let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) (ri : record_info list) : located_ty_decl =
+let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) (ri : record_info list)
+  : located_ty_decl
+  =
   let desugar_assoc ts ri = List.map (fun (i, e) -> i, desugar_expr e ri) ts in
   match decl with
   | Ast.Alias t -> loc, (i, Alias (desugar_expr t ri))
@@ -233,7 +244,9 @@ let desugar_ty_decl ((loc, (i, decl)) : Ast.located_ty_decl) (ri : record_info l
     loc, (i, Record (cons, desugar_expr tsig ri, desugar_assoc ts ri))
 ;;
 
-let rec desugar_def ((loc, d) : Ast.located_definition) (ri : record_info list) : located_definition =
+let rec desugar_def ((loc, d) : Ast.located_definition) (ri : record_info list)
+  : located_definition
+  =
   match d with
   | Ast.Dec (i, e) -> loc, Dec (i, desugar_expr e ri)
   | Ast.Def (i, args, when_block, b, with_block) ->
@@ -303,7 +316,7 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
 
 let desugar_program ((i, imps, decls, defs) : Ast.program) : program =
   let decls = List.map (flip desugar_ty_decl []) decls in
-  let ri : record_info list = 
+  let ri : record_info list =
     let rec go l acc =
       match l with
       | [] -> acc

@@ -93,8 +93,11 @@ let pp_const out ((_, c) : located_const) =
   | Unit -> Format.fprintf out "()"
   | Ident i | Udc i -> pp_ident out i
   | AccessIdent is ->
-    let i = List.map get_str is |> String.concat "." in
-    Format.fprintf out "%s" i
+    Format.fprintf
+      out
+      "%a"
+      Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ".") pp_ident)
+      is
 ;;
 
 let pp_binop out (b : binop) =

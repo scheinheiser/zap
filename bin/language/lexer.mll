@@ -61,29 +61,10 @@
   ]
 
   let builtin_symbol = [
-    ("+", PLUS);
-    ("+.", FPLUS);
-    ("-", MINUS);
-    ("-", FMINUS);
-    ("*", MUL);
-    ("*.", FMUL);
-    ("/", DIV);
-    ("/.", FDIV);
-    ("&&", AND);
-    ("||", OR);
-    ("=", EQ);
-    ("==", DEQ);
-    ("/=", NE);
-    (">", GT);
-    ("<", LT);
-    (">=", GTE);
-    ("<=", LTE);
     (":=", ASSIGNMENT);
-    ("::", CONS);
-    ("->", ARROW);
+    ("=", EQ);
     ("=>", F_ARROW);
     ("@", ATSIGN);
-    ("~", TILDE);
     ("|", PIPE);
   ]
 }

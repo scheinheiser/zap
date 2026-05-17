@@ -53,8 +53,11 @@ type program =
 
 type record_info = ident * ident list
 
+(* desugaring *)
 val desugar_expr : Ast.located_expr -> record_info list -> located_expr
 val desugar_program : Ast.program -> program
+
+(* pretty printing *)
 val pp_pattern : Format.formatter -> located_pattern -> unit
 val pp_expr : Format.formatter -> located_expr -> unit
 val pp_definition : Format.formatter -> located_definition -> unit

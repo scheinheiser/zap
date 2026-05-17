@@ -14,7 +14,7 @@
 % unions can contain only operator constructors.
 @union List : (a: Type) -> Type =
   | Nil    : List a
-  | ( @: ) : a -> List a -> List a
+  | ( :: ) : a -> List a -> List a
 @rassoc 7 @:
 
 % the constructor is declared before the definition

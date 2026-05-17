@@ -65,13 +65,12 @@ end = struct
     v, e
   ;;
 
-  let rec find_ident ((_, e) : located_expr) : string =
+  let find_ident ((_, e) : located_expr) : string =
     match e with
     | Const (_, Ident i) -> get_str_combine i
     | Const (_, AccessIdent i) -> List.rev i |> List.hd |> get_str_combine
     | Const (_, Udc i) -> get_str_combine i
     | Binding (i, _) -> get_str_combine i
-    | Ap (_, l, _) -> find_ident l
     | _ -> ""
   ;;
 
@@ -124,9 +123,8 @@ end = struct
     | Const (s, Ident i) ->
       let i' = get_str i in
       (match VM.find_opt i' env with
-       | Some i when not @@ String.starts_with ~prefix:"__match__" i' ->
-         (loc, Const (s, Ident i)), env
-       | _ -> (loc, Const (s, Ident i)), env)
+       | Some i -> (loc, Const (s, Ident i)), env
+       | None -> (loc, Const (s, Ident i)), env)
     | Const (s, AccessIdent is) ->
       let is =
         List.map

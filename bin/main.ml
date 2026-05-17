@@ -9,7 +9,7 @@ open! Rename
 
 let () =
   let input = In_channel.(open_text "examples/typedecls.zap" |> input_all) in
-  (* let input = "(price : Type) -> Basket price -> price" in *)
+  (* let input = "a + b * c + d" in *)
   let l = Lexer.of_string input in
   let res = Parser.parse_program l in
   match res with

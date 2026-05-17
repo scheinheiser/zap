@@ -4,6 +4,7 @@ module C = Map.Make (String)
 
 let ( let* ) = Base.Or_error.( >>= )
 let ( let@ ) = Base.Or_error.( >>| )
+let flip = Fun.flip
 
 (* type, value *)
 type ctx = Typed_ast.typed_expr C.t
@@ -11,7 +12,7 @@ type ctx = Typed_ast.typed_expr C.t
 let empty () : ctx = C.empty
 
 (* utils *)
-let lookup ctx : string -> Typed_ast.typed_expr option = Fun.flip C.find_opt ctx
+let lookup ctx : string -> Typed_ast.typed_expr option = flip C.find_opt ctx
 
 let lookup_ty ctx : string -> Typed_ast.located_expr option =
   Fun.compose (Base.Option.map ~f:fst) (lookup ctx)
@@ -54,10 +55,6 @@ let rec reduce (ctx : ctx) ((ty, e) : Typed_ast.typed_expr) : Typed_ast.typed_ex
       (match lookup ctx i with
        | None -> te
        | Some e -> snd e)
-    | Bop (l, op, r) ->
-      let l = reduce ctx l
-      and r = reduce ctx r in
-      loc, Bop (l, op, r)
     | Ap (b, l, r) ->
       let l = reduce ctx l
       and r = reduce ctx r in
@@ -123,15 +120,12 @@ let rec unify_pat
          | Ok ctx -> go ctx (Ok () :: acc) t)
     in
     let bs, ctx = go ctx [] bs in
-    combine_errors bs >>| fun _ -> ctx
-  | Typed_ast.PCons (l, r), Typed_ast.Bop (l', Cons, r') ->
-    let* ctx = unify_pat ctx l l' in
-    unify_pat ctx r r'
+    let@ _ = combine_errors bs in
+    ctx
   | Typed_ast.PConst (_, c), Typed_ast.Const (_, c') ->
     let lc = get_const_type c in
     let rc = get_const_type c' in
     if lc = rc then Ok ctx else uni_err loc p_with_loc t
-  | Typed_ast.PConst (_, c), Typed_ast.Bop (_, _, _)
   | Typed_ast.PConst (_, c), Typed_ast.Ap (_, _, _) ->
     let _ = get_const_type c in
     failwith "finish normalise! for equality function"
@@ -163,7 +157,7 @@ let rec unify_pat
        in
        (match () with
         | _ when List.length cons <> List.length ps ->
-          failwith "" (*TODO:something something empty variants *)
+          Error.todo "empty variants" (*TODO:something something empty variants *)
         | _ when i <> i' ->
           make_err
             (Some loc, Printf.sprintf "Expected '%s' constructor, but got '%s'." i i')
@@ -188,10 +182,6 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
          make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
        | Some v -> go ctx v)
     | Const _ -> Ok ((loc, e), ctx)
-    | Bop (l, op, r) ->
-      let* l, _ = normalise ctx l in
-      let@ r, _ = normalise ctx r in
-      (loc, Bop (l, op, r)), ctx
     | Ap (b, l, r) ->
       let* l, _ = normalise ctx l in
       let* r, _ = normalise ctx r in
@@ -205,15 +195,8 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       let@ t, _ = normalise ctx t in
       (loc, Binding (i, t)), extend ctx (get_str_combine i) ~t:(fst t) ~v:(snd t)
     | Let (p, e, n) ->
-      let last_expr =
-        let rec go = function
-          | _, (_, Let (_, _, n)) -> go n
-          | e -> e
-        in
-        go e
-      in
       let* e, _ = normalise ctx e in
-      let* ctx' = unify_pat ctx p last_expr in
+      let* ctx' = unify_pat ctx p e in
       let@ n, _ = normalise ctx' n in
       (loc, Let (p, e, n)), ctx
     | Match (c, bs) ->
@@ -239,6 +222,12 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
       let* l, ctx' = normalise ctx l in
       let@ r, _ = normalise ctx' r in
       (loc, Pi (l, r)), ctx
+    | Tuple ts ->
+      let@ ts =
+        List.map (fun e -> let@ e, _ = normalise ctx e in e) ts 
+        |> Base.Or_error.combine_errors
+      in
+      (loc, Tuple ts), ctx
     | _ -> Ok ((loc, e), ctx)
   in
   let* t, ctx = go ctx t in
@@ -284,7 +273,17 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
     let@ u2 = infer_universe ctx' r in
     let e = (loc, Typed_ast.TypeLit (PUni (Int.max u1 u2))), (loc, Typed_ast.Pi (l, r)) in
     e, ctx
-  | _ -> failwith ""
+  | Ap (b, l, r) ->
+    let* ((lt, _) as l), ctx' = infer ctx l in
+    let* (rt, _) as r, _ = infer ctx' r in
+    (match lt with
+    | _, Typed_ast.Pi ((_, lt), (_, ret)) ->
+      let@ _ = check_equal rt lt in
+      let e = loc, Typed_ast.Ap (b, l, r) in
+      (ret, e), ctx
+    | t ->
+      make_err (Some loc, Format.asprintf "Expected a function, but got %a." Typed_ast.pp_expr t))
+  | _ -> Error.todo "finish infer"
 
 and infer_universe (ctx : ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t =
   let open Typed_ast in
@@ -292,4 +291,7 @@ and infer_universe (ctx : ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t 
   match t with
   | TypeLit t -> Ok (get_level t)
   | _ -> make_err (Some loc, Format.asprintf "Expected type, got '%a'." pp_expr e)
+
+and check_equal (_ : Typed_ast.located_expr) (_ : Typed_ast.located_expr) : unit Base.Or_error.t =
+  Error.todo "equality function"
 ;;

@@ -17,6 +17,31 @@ let ( >>| ) = Base.Or_error.( >>| )
 let ( let* ) = Base.Or_error.( >>= )
 let ( let@ ) = Base.Or_error.( >>| )
 
+let id = Fun.id
+
+(* operator, (precedence, function to get associativity) *)
+let builtin_ops =
+  [
+    ("->", (1, ((-) 1)));
+    ("::", (1, ((-) 1)));
+    ("==", (2, id));
+    ("/=", (2, id));
+    ("&&", (3, id));
+    ("||", (3, id));
+    ("<", (4, id));
+    (">", (4, id));
+    ("<=", (4, id));
+    (">=", (4, id));
+    ("+", (5, id));
+    ("-", (5, id));
+    ("+.", (5, id));
+    ("-", (5, id));
+    ("*", (6, id));
+    ("/", (6, id));
+    ("*.", (6, id));
+    ("/.", (6, id));
+  ]
+
 module Lexer : sig
   type t = { mutable tokens : Token.t list }
   type 'a result = 'a Base.Or_error.t
@@ -243,18 +268,15 @@ module Parser = struct
 
   let get_bp (t : Token.token) (om : operator_map) : int =
     match t with
-    (* parser fail without this in cases like `f (g x)` *)
+    (* the parser will fail without this in cases like `f (g x)` *)
     | LPAREN | LBRACK | ARROW -> 1
-    | NE | DEQ -> 2
-    | AND | OR -> 3
-    | LT | GT | LTE | GTE -> 4
-    | PLUS | MINUS | FPLUS | FMINUS -> 5
-    | MUL | DIV | FMUL | FDIV -> 6
-    | CONS -> 7
     | OP op ->
-      (match OM.find_opt op om with
-       | Some (n, _) -> n
-       | None -> 8)
+      (match List.assoc_opt op builtin_ops with
+        | Some (p, _) -> p
+        | None ->
+          (match OM.find_opt op om with
+          | Some (n, _) -> n
+          | None -> 8))
     | UPPER_IDENT _
     | IDENT _
     | DOT_SEP_IDENT _
@@ -270,10 +292,13 @@ module Parser = struct
 
   (* returns operator precedence, accounting for fixity/associativity *)
   let get_bp_with_fixity (op : string) (om : operator_map) : int =
-    match OM.find_opt op om with
-    | Some (n, R) -> n - 1
-    | Some (n, L) -> n
-    | None -> 8
+    match List.assoc_opt op builtin_ops with
+    | Some (p, f) -> f p
+    | None ->
+      (match OM.find_opt op om with
+      | Some (n, R) -> n - 1
+      | Some (n, L) -> n
+      | None -> 8)
   ;;
 
   let parse_upper_ident (l : Lexer.t) : ident Lexer.result =
@@ -435,7 +460,7 @@ module Parser = struct
        | e, INT i ->
          Lexer.skip ~am:1 l;
          Location.combine s e, Ast.TypeLit (PUni i)
-       | _ -> s, Ast.TypeLit (PUni 0) (* x : Type => x : Type 0 *))
+       | _ -> s, Ast.TypeLit (PUni 1) (* x : Type => x : Type 1 *))
       |> Lexer.ok
     | s, IDENT i ->
       let open Lexer in
@@ -514,7 +539,7 @@ module Parser = struct
   and led
         (l : Lexer.t)
         (left : Ast.located_expr)
-        (lbp : int)
+        (_ : int)
         (s : Location.t)
         (op : Token.token)
         (om : operator_map)
@@ -522,63 +547,9 @@ module Parser = struct
     =
     let@ expr =
       match op with
-      | PLUS ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, IAdd, e)
-      | FPLUS ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, FAdd, e)
-      | MINUS ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, ISub, e)
-      | FMINUS ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, FSub, e)
-      | MUL ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, IMul, e)
-      | FMUL ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, FMul, e)
-      | DIV ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, IDiv, e)
-      | FDIV ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, FDiv, e)
-      | CONS ->
-        let@ e = parse_expr l (lbp - 1) om in
-        Ast.Bop (left, Cons, e)
-      | NE ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, NotEq, e)
-      | DEQ ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, Equal, e)
-      | LT ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, Less, e)
-      | LTE ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, LessE, e)
-      | GT ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, Greater, e)
-      | GTE ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, GreaterE, e)
-      | AND ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, And, e)
-      | OR ->
-        let@ e = parse_expr l lbp om in
-        Ast.Bop (left, Or, e)
       | OP o ->
         let@ e = parse_expr l (get_bp_with_fixity o om) om in
-        Ast.Bop (left, User_op (Str o), e)
-      | ARROW ->
-        let@ e = parse_expr l (lbp - 1) om in
-        Ast.Pi (left, e)
+        Ast.Bop (left, (Str o), e)
       | INT i -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Int i))))
       | FLOAT f -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Float f))))
       | CHAR c -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Char c))))

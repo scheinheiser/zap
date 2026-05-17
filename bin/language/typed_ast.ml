@@ -6,7 +6,7 @@ type located_pattern = Location.t * pattern
 and pattern =
   | PWild (* _ *)
   | PConst of located_const
-  | PCons of located_pattern * located_pattern
+  | PBop of located_pattern * ident * located_pattern
   | PCtor of ident * located_pattern list
   | PTuple of located_pattern list
 
@@ -15,7 +15,6 @@ and located_expr = Location.t * expr
 
 and expr =
   | Const of located_const
-  | Bop of typed_expr * binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
   | Tuple of typed_expr list
   | Let of located_pattern * typed_expr * typed_expr
@@ -29,9 +28,9 @@ type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
 and tdecl_type =
-  | Alias of located_expr
-  | Variant of (ident * located_expr) list
-  | Record of (ident * located_expr) list
+  | Alias of typed_expr
+  | Variant of typed_expr * (ident * typed_expr) list
+  | Record of ident * typed_expr * (ident * typed_expr) list
 
 type located_definition = Location.t * definition
 
@@ -48,19 +47,28 @@ type program =
 (* utils *)
 let rec show_pat = function
   | _, PWild -> "_"
-  | _, PCons (l, r) -> Printf.sprintf "%s :: %s" (show_pat l) (show_pat r)
+  | _, PBop (l, op, r) -> Printf.sprintf "%s %s %s" (show_pat l) (get_str op) (show_pat r)
   | _, PCtor (n, p) ->
     Format.asprintf "%a %s" pp_ident n (List.map show_pat p |> String.concat " ")
   | _, PTuple ps -> Printf.sprintf "(%s)" (List.map show_pat ps |> String.concat ", ")
   | _, PConst c -> Format.asprintf "%a" pp_const c
 ;;
 
+let rec convert ((loc, p) : Desugar.located_pattern) : located_pattern =
+  let p = match p with
+    | Desugar.PWild -> PWild
+    | Desugar.PConst c -> PConst c
+    | Desugar.PBop (l, op, r) -> PBop (convert l, op, convert r)
+    | Desugar.PCtor (i, cs) -> PCtor (i, List.map convert cs)
+    | Desugar.PTuple ps -> PTuple (List.map convert ps)
+  in loc, p
+
 (* pretty printing *)
 let rec pp_pattern out ((_, arg) : located_pattern) =
   match arg with
   | PConst c -> pp_const out c
   | PWild -> Format.fprintf out "_"
-  | PCons (l, r) -> Format.fprintf out "(:: @[<hov>%a %a@])" pp_pattern l pp_pattern r
+  | PBop (l, op, r) -> Format.fprintf out "(%a @[<hov>%a %a@])" pp_ident op pp_pattern l pp_pattern r
   | PCtor (i, v) ->
     Format.fprintf
       out
@@ -82,8 +90,6 @@ let rec pp_expr out ((_, e) : located_expr) =
   | Const c -> pp_const out c
   | Ap (_, f, arg) ->
     Format.fprintf out "(@[<hov>%a@ %a@])" pp_typed_expr f pp_typed_expr arg
-  | Bop (l, op, r) ->
-    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_typed_expr l pp_typed_expr r
   | Tuple t ->
     Format.fprintf
       out
@@ -137,21 +143,24 @@ let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =
   | _ -> Format.fprintf out "(ty@[<v>pe %a@,%a@])" pp_ident i pp_tdecl_type t
 
 and pp_tdecl_type out (t : tdecl_type) =
-  let pp_field out ((i, t) : ident * located_expr) =
-    Format.fprintf out "(%a %a)" pp_ident i pp_expr t
+  let pp_field out ((i, t) : ident * typed_expr) =
+    Format.fprintf out "(%a %a)" pp_ident i pp_typed_expr t
   in
   match t with
-  | Alias t -> pp_expr out t
-  | Record r ->
+  | Alias t -> pp_typed_expr out t
+  | Record (cons, ty, r) ->
     Format.fprintf
       out
-      "(re@[<v>cord@,%a@])"
+      "(re@[<v>cord %a { %a }@,%a@])"
+      pp_ident cons
+      pp_typed_expr ty
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       r
-  | Variant v ->
+  | Variant (ty, v) ->
     Format.fprintf
       out
-      "(va@[<v>riant@,%a@])"
+      "(va@[<v>riant { %a }@,%a@])"
+      pp_typed_expr ty
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out "@,") pp_field)
       v
 ;;

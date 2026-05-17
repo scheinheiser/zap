@@ -6,7 +6,7 @@ type located_pattern = Location.t * pattern
 and pattern =
   | PWild (* _ *)
   | PConst of located_const
-  | PCons of located_pattern * located_pattern
+  | PBop of located_pattern * ident * located_pattern
   | PCtor of ident * located_pattern list
   | PTuple of located_pattern list
 
@@ -15,7 +15,6 @@ and located_expr = Location.t * expr
 
 and expr =
   | Const of located_const
-  | Bop of typed_expr * binop * typed_expr
   | Ap of binder * typed_expr * typed_expr
   | Tuple of typed_expr list
   | Let of located_pattern * typed_expr * typed_expr
@@ -29,9 +28,9 @@ type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
 
 and tdecl_type =
-  | Alias of located_expr
-  | Variant of (ident * located_expr) list
-  | Record of (ident * located_expr) list
+  | Alias of typed_expr
+  | Variant of typed_expr * (ident * typed_expr) list
+  | Record of ident * typed_expr * (ident * typed_expr) list
 
 type located_definition = Location.t * definition
 
@@ -47,6 +46,9 @@ type program =
 
 (* utils *)
 val show_pat : located_pattern -> string
+val convert : Desugar.located_pattern -> located_pattern
+
+(* pretty printing *)
 val pp_pattern : Format.formatter -> located_pattern -> unit
 val pp_expr : Format.formatter -> located_expr -> unit
 val pp_typed_expr : Format.formatter -> typed_expr -> unit

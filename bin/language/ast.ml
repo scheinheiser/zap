@@ -17,7 +17,7 @@ type located_expr = Location.t * expr
 and expr =
   | List of located_expr list
   | Tuple of located_expr list
-  | Bop of located_expr * binop * located_expr
+  | Bop of located_expr * ident * located_expr
   | Ap of binder * located_expr * located_expr
   (* we give each function a binder to distinguish between user-defined functions and builtins later on *)
   | Let of
@@ -112,7 +112,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       t
   | Ap (_, f, arg) -> Format.fprintf out "(%@ @[<hov>%a@ %a@])" pp_expr f pp_expr arg
   | Bop (l, op, r) ->
-    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_binop op pp_expr l pp_expr r
+    Format.fprintf out "(@[<hov>%a@ %a@ %a@])" pp_ident op pp_expr l pp_expr r
   | Let (p, ty, v, n) ->
     Format.fprintf
       out

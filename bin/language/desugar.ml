@@ -126,7 +126,12 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
   | Ast.Const c -> loc, Const c
   | Ast.TypeLit t -> loc, TypeLit t
   | Ast.Binding (i, e) -> loc, Binding (i, desugar_expr e ri)
-  | Ast.Bop (l, op, r) -> desugar_abs l r (fun l r -> loc, Bop (l, op, r))
+  | Ast.Bop (l, op, r) ->
+    (* x + y ==> (+) x y *)
+    let l = desugar_expr l ri in
+    let r = desugar_expr r ri in
+    let op = loc, Const (loc, Ident op) in
+    loc, Ap (0, (loc, Ap (0, op, l)), r)
   | Ast.Ap (b, l, r) -> desugar_abs l r (fun l r -> loc, Ap (b, l, r))
   | Ast.Pi (l, r) -> desugar_abs l r (fun l r -> loc, Pi (l, r))
   | Ast.List es ->
@@ -288,18 +293,19 @@ and desugar_flpm (loc, (i, args, when_block, body, wb)) (defs : located_definiti
     in
     group_defs defs [] []
   in
+  let defs' = List.rev defs' in
   match matches with
   | [] -> (loc, Def (i, args, when_block, body, wb)), defs
   | _ ->
     let match_idents = List.map (fun _ -> loc, Ident (fresh_pattern_ident ())) args in
     let new_body, with_block =
       let rec construct_branches ds branch_acc wb_acc =
+        (* f x₁ .. xₙ : ... = ... ==> | (x₁, .., xₙ) when ... => ... *)
         match ds with
         | [] ->
           let b = (loc, PTuple args), when_block, body in
           b :: branch_acc, List.flatten (wb :: wb_acc)
         | (_, (_, args, when_block, b, with_block)) :: ds ->
-          (* f x₁ .. xₙ : ... = ... ==> | (x₁, .., xₙ) when ... => ... *)
           let branch = (loc, PTuple args), when_block, b in
           construct_branches ds (branch :: branch_acc) (with_block :: wb_acc)
         (* with_blocks are preserved to prevent any undefined variable errors *)
@@ -337,7 +343,7 @@ let desugar_program ((i, imps, decls, defs) : Ast.program) : program =
     in
     without_matches defs []
   in
-  i, imps, decls, defs
+  i, imps, decls, List.rev defs
 ;;
 
 (* pretty printing *)

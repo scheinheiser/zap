@@ -30,7 +30,7 @@ and expr =
   | Lam of located_pattern list * located_expr
   | Const of located_const
   | TypeLit of prim
-  | Binding of ident * located_expr (* x : T *)
+  | Binding of ident * located_expr * bool (* (x : T) | { x : T } *)
   | Pi of located_expr * located_expr
   | RCons of ident * (ident * located_expr) list (* MkRec { x₁ = y₁; ...; xₙ = yₙ } *)
   | RUpdate of

@@ -2,6 +2,7 @@ open Util
 open Primitive
 module C = Map.Make (String)
 
+let ignore_m = Base.Or_error.ignore_m
 let ( let* ) = Base.Or_error.( >>= )
 let ( let@ ) = Base.Or_error.( >>| )
 let flip = Fun.flip
@@ -235,6 +236,33 @@ and normalise (ctx : ctx) ((t, e) : Typed_ast.typed_expr)
   (t, e), ctx
 ;;
 
+(* checking that a given value is actually a type or is just an expression *)
+let is_type (ctx : ctx) ((loc, e) : Typed_ast.located_expr) : bool Base.Or_error.t =
+  let open Typed_ast in
+  let lookup_id ctx i =
+    match lookup_ty ctx i with
+    | None -> make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." i)
+    | Some _ -> Ok true
+  in
+  (* this is used to check the type of a type, hence why other typelits are ignored *)
+  let is_uni (_, t) =
+    match t with
+    | TypeLit (PUni _) -> true
+    | _ -> false
+  in
+  match e with
+  | Const (_, Ident i) | Const (_, Udc i) -> lookup_id ctx (get_str_combine i)
+  | Const (_, AccessIdent is) ->
+    let i = List.rev is |> List.hd |> get_str_combine in
+    lookup_id ctx i
+  | Ap (_, (l, _), (r, _)) | Pi ((l, _), (r, _)) -> Ok (is_uni l && is_uni r)
+  | Binding (_, (t, _)) | Lam (_, (t, _)) -> Ok (is_uni t)
+  | Match (_, ts) -> Ok (List.fold_left (fun acc (_, _, (t, _)) -> acc && is_uni t) true ts)
+  | Tuple ts -> Ok (List.fold_left (fun acc (t, _) -> acc && is_uni t) true ts)
+  | Let (_, (te, _), (tn, _)) -> Ok (is_uni te && is_uni tn)
+  | TypeLit _ -> Ok true
+  | Const _ -> Ok false
+
 (* type inference for expressions *)
 let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
   : (Typed_ast.typed_expr * ctx) Base.Or_error.t
@@ -248,6 +276,21 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
      | Some t ->
        let e = t, (loc, Typed_ast.Const (l, Ident i)) in
        Ok (e, ctx))
+  | Const (l, Udc i) ->
+    let i' = get_str_combine i in
+    (match lookup_ty ctx i' with
+     | None -> make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." (get_str i))
+     | Some t ->
+       let e = t, (loc, Typed_ast.Const (l, Udc i)) in
+       Ok (e, ctx))
+  | Const (l, AccessIdent is) ->
+    let i = List.map get_str is |> String.concat "." in
+    let i' = List.rev is |> List.hd |> get_str_combine in
+    (match lookup_ty ctx i' with
+     | None -> make_err (Some loc, Printf.sprintf "Undefined identifier '%s'." i)
+     | Some t ->
+       let e = t, (loc, Typed_ast.Const (l, AccessIdent is)) in
+       Ok (e, ctx))
   | Const (l, c) ->
     let e = (loc, Typed_ast.TypeLit (get_const_type c)), (loc, Typed_ast.Const (l, c)) in
     Ok (e, ctx)
@@ -260,12 +303,16 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
     in
     let e = (loc, Typed_ast.TypeLit (PUni ix)), (loc, Typed_ast.TypeLit l) in
     Ok (e, ctx)
-  | Binding (i, e) ->
-    let@ e, ctx = infer ctx e in
-    (* the 'binding' expression is given the type of the bound type. *)
-    let e' = fst e, (loc, Typed_ast.Binding (i, e)) in
-    (* the identifier itself is associated with the bound type *)
-    e', extend ctx (get_str_combine i) ~t:(snd e) ~v:(snd e')
+  | Binding (i, e, _) ->
+    let* (_, fail) as e, ctx = infer ctx e in
+    let* ty = is_type ctx (snd e) in
+    if not ty
+    then make_err (Some loc, Format.asprintf "Expected type, but got %a." Typed_ast.pp_expr fail)
+    else
+      (* the 'binding' expression is given the type of the bound type. *)
+      let e' = fst e, (loc, Typed_ast.Binding (i, e)) in
+      (* the identifier itself is associated with the bound type *)
+      Ok (e', extend ctx (get_str_combine i) ~t:(snd e) ~v:(snd e'))
   | Pi (l, r) ->
     let* l, ctx' = infer ctx l in
     let* r, _ = infer ctx' r in
@@ -274,15 +321,17 @@ let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
     let e = (loc, Typed_ast.TypeLit (PUni (Int.max u1 u2))), (loc, Typed_ast.Pi (l, r)) in
     e, ctx
   | Ap (b, l, r) ->
-    let* ((lt, _) as l), ctx' = infer ctx l in
-    let* (rt, _) as r, _ = infer ctx' r in
+    let* l, ctx' = infer ctx l in
+    let* r, _ = infer ctx' r in
+    let* (lt, _) as l, _ = normalise ctx' l in
+    let* (rt, _) as r, _ = normalise ctx' r in
     (match lt with
     | _, Typed_ast.Pi ((_, lt), (_, ret)) ->
-      let@ _ = check_equal rt lt in
+      let@ _ = check_equal ctx ~e:rt ~g:lt in
       let e = loc, Typed_ast.Ap (b, l, r) in
       (ret, e), ctx
-    | t ->
-      make_err (Some loc, Format.asprintf "Expected a function, but got %a." Typed_ast.pp_expr t))
+    | _ ->
+      make_err (Some loc, Format.asprintf "Expected a function, but got %a." Typed_ast.pp_typed_expr l))
   | _ -> Error.todo "finish infer"
 
 and infer_universe (ctx : ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t =
@@ -292,6 +341,57 @@ and infer_universe (ctx : ctx) (t : Typed_ast.typed_expr) : int Base.Or_error.t 
   | TypeLit t -> Ok (get_level t)
   | _ -> make_err (Some loc, Format.asprintf "Expected type, got '%a'." pp_expr e)
 
-and check_equal (_ : Typed_ast.located_expr) (_ : Typed_ast.located_expr) : unit Base.Or_error.t =
-  Error.todo "equality function"
+and check_equal (ctx : ctx) ~e:(l : Typed_ast.located_expr) ~g:(r : Typed_ast.located_expr) : unit Base.Or_error.t =
+  let open Typed_ast in
+  let (_, l) as l' = to_nf ctx l in
+  let (loc, r) as r' = to_nf ctx r in
+  let* lres = is_type ctx l' in
+  let* rres = is_type ctx r' in
+  match lres, rres with
+  | false, false -> make_err (Some loc, Format.asprintf "Expected types, got %a and %a." pp_expr l' pp_expr r')
+  | false, _ -> make_err (Some loc, Format.asprintf "Expected type, got %a." pp_expr l')
+  | _, false -> make_err (Some loc, Format.asprintf "Expected type, got %a." pp_expr r')
+  | _ ->
+    let eq_err ~ex ~got =
+      make_err (Some loc, Printf.sprintf "Expected type %s, but got %s." ex got)
+    in
+    match l, r with
+    | Const (_, Ident l), Const (_, Ident r) | Const (_, Udc l), Const (_, Udc r) -> 
+      let l = get_str_combine l in
+      let r = get_str_combine r in
+      if l = r
+      then Ok ()
+      else eq_err ~ex:l ~got:r
+    | TypeLit l, TypeLit r ->
+      (match l, r with
+      | PInt, PInt
+      | PFloat, PFloat
+      | PString, PString
+      | PChar, PChar
+      | PBool, PBool
+      | PUnit, PUnit -> Ok ()
+      | PUni l, PUni r when l = r -> Ok ()
+      | _ -> eq_err ~ex:(show_prim l) ~got:(show_prim r))
+    | Ap (_, (_, ll), (_, lr)), Ap (_, (_, rl), (_, rr)) ->
+      let* _ = check_equal ctx ~e:ll ~g:rl in
+      ignore_m @@ check_equal ctx ~e:lr ~g:rr
+    | Tuple ls, Tuple rs when List.length ls = List.length rs ->
+      let ls = List.map fst ls in
+      let rs = List.map fst rs in
+      List.map2 (fun l r -> check_equal ctx ~e:l ~g:r) ls rs
+      |> Base.Or_error.combine_errors_unit
+    | Binding (li, (_, l)), Binding (ri, (_, r)) when (get_str_combine li) = (get_str_combine ri) -> check_equal ctx ~e:l ~g:r
+    | Pi ((_, ll), (_, lr)), Pi ((_, rl), (_, rr)) ->
+      let* _ = check_equal ctx ~e:ll ~g:rl in
+      check_equal ctx ~e:lr ~g:rr
+    | Let (_, (_, lb), (_, ln)), Let (_, (_, rb), (_, rn)) ->
+      let* _ = check_equal ctx ~e:lb ~g:rb in
+      ignore_m (check_equal ctx ~e:ln ~g:rn)
+    | Match ((_, lc), lbs), Match ((_, rc), rbs) when List.length lbs = List.length rbs ->
+      let* _ = check_equal ctx ~e:lc ~g:rc in
+      List.map2 (fun (_, _, (_, l)) (_, _, (_, r)) -> check_equal ctx ~e:l ~g:r) lbs rbs |> Base.Or_error.combine_errors_unit
+    | _ -> raise (Error.InternalError "Internal error - non-type value.")
+
+and to_nf (_ : ctx) (_ : Typed_ast.located_expr) : Typed_ast.located_expr =
+  Error.todo "to_nf"
 ;;

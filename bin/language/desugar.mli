@@ -28,7 +28,7 @@ and expr =
     (* `fun x y => x` is desugared to `fun x => fun y => x` *)
   | Const of located_const
   | TypeLit of prim
-  | Binding of ident * located_expr (* x : T *)
+  | Binding of ident * located_expr * bool (* (x : T) | {x : T} *)
   | Pi of located_expr * located_expr
 
 type located_ty_decl = Location.t * ty_decl
@@ -43,7 +43,7 @@ type located_definition = Location.t * definition
 
 and definition =
   | Dec of ident * located_expr
-  | Def of ident * located_pattern list * located_expr option * located_expr * with_block
+  | Def of ident * located_expr option * located_expr * with_block
 (* identifer, args, optional when-block, body, optional with-block *)
 
 and with_block = located_definition list

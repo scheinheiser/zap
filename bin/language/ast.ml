@@ -30,7 +30,7 @@ and expr =
   | Lam of located_pattern list * located_expr
   | Const of located_const
   | TypeLit of prim
-  | Binding of ident * located_expr (* x : T *)
+  | Binding of ident * located_expr * bool (* (x : T) | { x : T } *)
   | Pi of located_expr * located_expr
   | RCons of ident * (ident * located_expr) list (* cons { x₁ = y₁; ...; xₙ = yₙ } *)
   | RUpdate of
@@ -163,7 +163,10 @@ let rec pp_expr out ((_, e) : located_expr) =
       Format.(pp_print_list ~pp_sep:pp_print_cut pp_branch)
       bs
   | Pi (l, r) -> Format.fprintf out "(%a -> %a)" pp_expr l pp_expr r
-  | Binding (i, e) -> Format.fprintf out "(%a : %a)" pp_ident i pp_expr e
+  | Binding (i, e, is_imp) -> 
+    if is_imp
+    then Format.fprintf out "{ %a : %a }" pp_ident i pp_expr e
+    else Format.fprintf out "( %a : %a )" pp_ident i pp_expr e
   | TypeLit p -> Format.fprintf out "%a" pp_prim p
   | RCons (i, fields) ->
     let pp_field out (i, v) = Format.fprintf out "%a = %a" pp_ident i pp_expr v in

@@ -13,11 +13,11 @@
 
 (license LICENSE)
 
-(documentation https://url/to/documentation)
+(documentation https://github.com/scheinheiser/zap)
 
 (package
  (name zap)
- (synopsis "a functional language")
+ (synopsis "a dependently-typed, functional language")
  (description "")
  (depends ocaml)
  (tags

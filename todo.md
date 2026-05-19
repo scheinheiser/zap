@@ -1,8 +1,9 @@
 ## Design
 - [x] Redo type declaration syntax.
 - [x] Turn `PCons` into a general binary construct.
-- [ ] Remove `CONS` and any builtin operator in favour of identifying it later on or something.
-- [ ] Implicit arguments
+- [x] Remove `CONS` and any builtin operator in favour of identifying it later on or something.
+- [x] Implicit arguments
+- [ ] Mutiple arguments in a single binding (i.e. `(a, b, c : Type)`)
 - [x] Properly desugar record constructors.
 
 ## Parser

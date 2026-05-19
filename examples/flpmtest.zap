@@ -1,7 +1,21 @@
 @module FLPMTest
 
+@union List : (a: Type) -> Type =
+  | Nil    : List a
+  | ( :: ) : a -> List a -> List a
+@rassoc 7 ::
+
+dec sum : List Int -> Int
 def sum [] := 0
 def sum (x :: xs) := x + sum xs
 
-def map _ [] := []
-def map f (x :: xs) := f x :: map f xs
+dec map : (a : Type) -> (b : Type) -> (a -> b) -> List a -> List b
+def map _ _ _ [] := []
+def map a b f (x :: xs) := f x :: map a b f xs
+
+dec chooseType : Bool -> Type 0
+def chooseType true := Int
+def chooseType false := String
+
+dec value : chooseType true
+def value := 5

@@ -280,15 +280,15 @@ module Parser = struct
     | UPPER_IDENT _
     | IDENT _
     | DOT_SEP_IDENT _
-    | INT _
-    | FLOAT _
-    | CHAR _
-    | STRING _
-    | BOOL _
-    | UNIT -> 9 (* for function application *)
+    | INT _    | TY_INT
+    | FLOAT _  | TY_FLOAT
+    | CHAR _   | TY_CHAR
+    | STRING _ | TY_STRING
+    | BOOL _   | TY_BOOL
+    | UNIT     | TY_UNIT-> 9 (* for function application *)
     | EOF -> -1
     | _ -> 0
-  ;;
+  [@@ocamlformat "disable"]
 
   (* returns operator precedence, accounting for fixity/associativity *)
   let get_bp_with_fixity (op : string) (om : operator_map) : int =
@@ -435,7 +435,7 @@ module Parser = struct
       if Lexer.current l |> snd |> Fun.flip get_bp om > limit
       then (
         let _, op_tok = Lexer.advance l in
-        let* res = led l lf (get_bp op_tok om) s op_tok om in
+        let* res = led l lf s op_tok om in
         go res)
       else Lexer.ok lf
     in
@@ -469,7 +469,7 @@ module Parser = struct
            Lexer.consume l COLON "Expected a ':' between identifier and type in binding."
          in
          let@ ((e, _) as t) = parse_expr l 0 om in
-         Location.combine s e, Ast.Binding (Str i, t))
+         Location.combine s e, Ast.Binding (Str i, t, false))
        <|> fun _ -> Lexer.ok (s, Ast.Const (s, Ident (Str i))))
         l
     | s, UPPER_IDENT i ->
@@ -485,7 +485,7 @@ module Parser = struct
          consume l COLON "Expected a ':' between identifier and type in binding."
        in
        let@ ((e, _) as t) = parse_expr l 0 om in
-       Location.combine s e, Ast.Binding (Str i, t))
+       Location.combine s e, Ast.Binding (Str i, t, false))
        <|> fun _ -> ok (s, Ast.Const (s, Udc (Str i))))
         l
     | s, DOT_SEP_IDENT is ->
@@ -495,6 +495,12 @@ module Parser = struct
     | s, IF -> parse_if l om s
     | s, FUN -> parse_lam l om s
     | s, MATCH -> parse_match l om s
+    | s, LBRACE ->
+      let* i = parse_ident l in
+      let* _ = Lexer.consume l COLON "Expected a ':' between a type and identifier in an implicit binding." in
+      let* t = parse_expr l 0 om in
+      let@ e = Lexer.consume_with_pos l RBRACE "Expected a '}' to end an implicit binding." in
+      Location.combine s e, Ast.Binding (i, t, true)
     | s, LBRACK ->
       let* es =
         match Lexer.current l |> snd with
@@ -539,7 +545,6 @@ module Parser = struct
   and led
         (l : Lexer.t)
         (left : Ast.located_expr)
-        (_ : int)
         (s : Location.t)
         (op : Token.token)
         (om : operator_map)
@@ -556,13 +561,19 @@ module Parser = struct
       | STRING str -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, String str))))
       | BOOL b -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Bool b))))
       | UNIT -> Lexer.ok (Ast.Ap (0, left, (s, Ast.Const (s, Unit))))
+      | TY_INT -> Lexer.ok (Ast.Ap (0, left, (s, Ast.TypeLit PInt)))
+      | TY_FLOAT -> Lexer.ok (Ast.Ap (0, left, (s, Ast.TypeLit PFloat)))
+      | TY_STRING -> Lexer.ok (Ast.Ap (0, left, (s, Ast.TypeLit PString)))
+      | TY_CHAR -> Lexer.ok (Ast.Ap (0, left, (s, Ast.TypeLit PChar)))
+      | TY_BOOL -> Lexer.ok (Ast.Ap (0, left, (s, Ast.TypeLit PBool)))
+      | TY_UNIT -> Lexer.ok (Ast.Ap (0, left, (s, Ast.TypeLit PUnit)))
       | IDENT i ->
         let open Lexer in
         let* r =
           ((fun l ->
             let* _ = consume l COLON "Expected ':' to separate identifier and type in binding." in
             let@ (e, _) as t = parse_expr l 0 om in
-            Location.combine s e, Ast.Binding (Str i, t))
+            Location.combine s e, Ast.Binding (Str i, t, false))
           <|>
           (fun _ ->
             ok (s, Ast.Const (s, Ident (Str i))))) l
@@ -582,7 +593,7 @@ module Parser = struct
           (fun l ->
             let* _ = Lexer.consume l COLON "Expected ':' to separate identifier and type in binding." in
             let@ (e, _) as t = parse_expr l 0 om in
-            Location.combine s e, Ast.Binding (Str i, t))
+            Location.combine s e, Ast.Binding (Str i, t, false))
           <|>
           (fun _ ->
             Lexer.ok (s, Ast.Const (s, Udc (Str i))))) l
@@ -601,6 +612,12 @@ module Parser = struct
         let* es = Lexer.separated_list l ~sep:SEMI (fun e -> parse_expr e 0 om) in
         let@ e = Lexer.consume_with_pos l RBRACK "Expected ']' to end list." in
         Ast.Ap (0, left, (Location.combine s e, Ast.List es))
+      | LBRACE ->
+        let* i = parse_ident l in
+        let* _ = Lexer.consume l COLON "Expected a ':' between a type and identifier in an implicit binding." in
+        let* t = parse_expr l 0 om in
+        let@ e = Lexer.consume_with_pos l RBRACE "Expected a '}' to end an implicit binding." in
+        Ast.Ap (0, left, (Location.combine s e, Ast.Binding (i, t, true)))
       | LPAREN ->
         let open Lexer in
         let s = Lexer.current_pos l in

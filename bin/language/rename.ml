@@ -70,7 +70,7 @@ end = struct
     | Const (_, Ident i) -> get_str_combine i
     | Const (_, AccessIdent i) -> List.rev i |> List.hd |> get_str_combine
     | Const (_, Udc i) -> get_str_combine i
-    | Binding (i, _) -> get_str_combine i
+    | Binding (i, _, _) -> get_str_combine i
     | _ -> ""
   ;;
 
@@ -208,11 +208,11 @@ end = struct
       in
       (loc, Match (e, bs)), env
     | TypeLit p -> (loc, TypeLit p), env
-    | Binding (i, e) ->
+    | Binding (i, e, is_imp) ->
       let i = get_str i in
       let i' = fresh_alpha i in
       let env = VM.add i i' env in
-      (loc, Binding (i', e)), env
+      (loc, Binding (i', e, is_imp)), env
     | Pi (l, r) ->
       let l, env = rename_expr env l in
       let r, env = rename_expr env r in
@@ -241,7 +241,7 @@ end = struct
       in
       let sig', _ = rename_expr (combine defenv varenv) sig' in
       (loc, Dec (i, sig')), (defenv, varenv)
-    | Def (i, args, when_block, body, with_block) ->
+    | Def (i, when_block, body, with_block) ->
       let i, defenv =
         if get_str i = "main"
         then i, defenv
@@ -254,7 +254,7 @@ end = struct
             let defenv = VM.add i i' defenv in
             i', defenv)
       in
-      let args, env = rename_list ~f:rename_pattern (combine defenv varenv) args in
+      let env = combine defenv varenv in
       let when_block, env =
         match when_block with
         | Some wb ->
@@ -271,7 +271,7 @@ end = struct
           with_block
       in
       let body, _ = rename_expr env body in
-      (loc, Def (i, args, when_block, body, with_block)), (defenv, varenv)
+      (loc, Def (i, when_block, body, with_block)), (defenv, varenv)
   ;;
 
   let rename_program ((prog_name, imps, tys, defs) : program) : program =

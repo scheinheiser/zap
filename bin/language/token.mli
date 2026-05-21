@@ -33,35 +33,21 @@ and token =
   | ELSE
   | DEC
   | TYPE
-  | FORALL
   | TILDE
   | DEF
   | FUN
   | LET
   | IN
+  | END
   | MODULE
   | IMPORT
   | ALIAS
   | UNION
   | RECORD
+  | CONSTRUCTOR
   | UNIVERSE
   | TTYPE
-  | AND
-  | OR
-  | LT
-  | GT
-  | LTE
-  | GTE
-  | NE
-  | PLUS
-  | FPLUS
-  | MINUS
-  | FMINUS
-  | DIV
-  | FDIV
-  | MUL
-  | FMUL
-  | CONS
+  | STAR
   | PIPE
   | LBRACE
   | RBRACE
@@ -73,7 +59,6 @@ and token =
   | SEMISEMI
   | COLON
   | EQ
-  | DEQ
   | ASSIGNMENT
   | ARROW
   | F_ARROW
@@ -85,5 +70,3 @@ and token =
   | EOF
 
 val show : token -> string
-val is_op : token -> bool
-val op_to_string : token -> string

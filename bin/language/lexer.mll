@@ -29,6 +29,7 @@
     ("else", ELSE);
     ("let", LET);
     ("in", IN);
+    ("end", END);
     ("rassoc", RASSOC);
     ("lassoc", LASSOC);
     ("module", MODULE);
@@ -54,9 +55,9 @@
     ("alias", ALIAS);
     ("union", UNION);
     ("record", RECORD);
+    ("constructor", CONSTRUCTOR);
     ("universe", UNIVERSE);
     ("Type", TTYPE);
-    ("forall", FORALL);
     ("fun", FUN);
   ]
 

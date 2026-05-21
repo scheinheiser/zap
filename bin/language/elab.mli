@@ -30,6 +30,7 @@ and expr =
   | TypeLit of prim
   | Binding of ident * located_expr * bool (* (x : T) | {x : T} *)
   | Pi of located_expr * located_expr
+  | Hole
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -51,10 +52,6 @@ and with_block = located_definition list
 type program =
   ident * located_import list * located_ty_decl list * located_definition list
 
-type record_info = ident * ident list
-
-(* desugaring *)
-val desugar_expr : Ast.located_expr -> record_info list -> located_expr
 val desugar_program : Ast.program -> program
 
 (* pretty printing *)

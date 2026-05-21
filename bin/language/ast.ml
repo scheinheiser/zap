@@ -37,6 +37,7 @@ and expr =
       ident
       * ident
       * (ident * located_expr) list (* cons { x where y₁ = z₁; ...; yₙ = zₙ } *)
+  | Hole (* _ *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -186,6 +187,7 @@ let rec pp_expr out ((_, e) : located_expr) =
       i
       Format.(pp_print_list ~pp_sep:(fun out () -> fprintf out ";@,") pp_field)
       fields
+  | Hole -> Format.fprintf out "_"
 ;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =

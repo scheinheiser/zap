@@ -31,6 +31,7 @@ and expr =
   | TypeLit of prim
   | Binding of ident * located_expr * bool (* (x : T) | {x : T} *)
   | Pi of located_expr * located_expr
+  | Hole
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type
@@ -123,6 +124,7 @@ let rec desugar_expr ((loc, e) : Ast.located_expr) (ri : record_info list) : loc
     cons l r
   in
   match e with
+  | Ast.Hole -> loc, Hole
   | Ast.Const c -> loc, Const c
   | Ast.TypeLit t -> loc, TypeLit t
   | Ast.Binding (i, e, is_imp) -> loc, Binding (i, desugar_expr e ri, is_imp)
@@ -438,6 +440,7 @@ let rec pp_expr out ((_, e) : located_expr) =
     then Format.fprintf out "{ %a : %a }" pp_ident i pp_expr e
     else Format.fprintf out "( %a : %a )" pp_ident i pp_expr e
   | TypeLit p -> Format.fprintf out "%a" pp_prim p
+  | Hole -> Format.fprintf out "_"
 ;;
 
 let rec pp_ty_decl out ((_, (i, t)) : located_ty_decl) =

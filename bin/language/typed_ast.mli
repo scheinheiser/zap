@@ -46,7 +46,7 @@ type program =
 
 (* utils *)
 val show_pat : located_pattern -> string
-val convert : Desugar.located_pattern -> located_pattern
+val convert : Elab.located_pattern -> located_pattern
 
 (* pretty printing *)
 val pp_pattern : Format.formatter -> located_pattern -> unit

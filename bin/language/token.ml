@@ -33,35 +33,21 @@ and token =
   | ELSE
   | DEC
   | TYPE
-  | FORALL
   | TILDE
   | DEF
   | FUN
   | LET
   | IN
+  | END
   | MODULE
   | IMPORT
   | ALIAS
   | UNION
   | RECORD
+  | CONSTRUCTOR
   | UNIVERSE
   | TTYPE
-  | AND
-  | OR
-  | LT
-  | GT
-  | LTE
-  | GTE
-  | NE
-  | PLUS
-  | FPLUS
-  | MINUS
-  | FMINUS
-  | DIV
-  | FDIV
-  | MUL
-  | FMUL
-  | CONS
+  | STAR
   | PIPE
   | LBRACE
   | RBRACE
@@ -73,7 +59,6 @@ and token =
   | SEMISEMI
   | COLON
   | EQ
-  | DEQ
   | ASSIGNMENT
   | ARROW
   | F_ARROW
@@ -111,35 +96,21 @@ let show (t : token) : string =
   | ELSE -> "ELSE"
   | DEC -> "DEC"
   | TYPE -> "TYPE"
-  | FORALL -> "FORALL"
   | TILDE -> "TILDE"
   | DEF -> "DEF"
   | FUN -> "FUN"
   | LET -> "LET"
   | IN -> "IN"
+  | END -> "END"
   | MODULE -> "MODULE"
   | IMPORT -> "IMPORT"
   | ALIAS -> "ALIAS"
   | UNION -> "UNION"
   | RECORD -> "RECORD"
+  | CONSTRUCTOR -> "CONSTRUCTOR"
   | UNIVERSE -> "UNIVERSE"
   | TTYPE -> "TTYPE"
-  | AND -> "AND"
-  | OR -> "OR"
-  | LT -> "LT"
-  | GT -> "GT"
-  | LTE -> "LTE"
-  | GTE -> "GTE"
-  | NE -> "NE"
-  | PLUS -> "PLUS"
-  | FPLUS -> "FPLUS"
-  | MINUS -> "MINUS"
-  | FMINUS -> "FMINUS"
-  | DIV -> "DIV"
-  | FDIV -> "FDIV"
-  | MUL -> "MUL"
-  | FMUL -> "FMUL"
-  | CONS -> "CONS"
+  | STAR -> "STAR"
   | PIPE -> "PIPE"
   | LBRACE -> "LBRACE"
   | RBRACE -> "RBRACE"
@@ -151,7 +122,6 @@ let show (t : token) : string =
   | SEMISEMI -> "SEMISEMI"
   | COLON -> "COLON"
   | EQ -> "EQ"
-  | DEQ -> "DEQ"
   | ASSIGNMENT -> "ASSIGNMENT"
   | ARROW -> "ARROW"
   | F_ARROW -> "F_ARROW"
@@ -162,45 +132,3 @@ let show (t : token) : string =
   | WILDCARD -> "WILDCARD"
   | EOF -> "EOF"
 [@@ocamlformat "disable"]
-
-let is_op (t : token) : bool =
-  match t with
-  | OP _
-  | PLUS
-  | FPLUS
-  | MINUS
-  | FMINUS
-  | DIV
-  | FDIV
-  | MUL
-  | FMUL
-  | AND
-  | OR
-  | LT
-  | GT
-  | LTE
-  | GTE
-  | CONS
-  | NE
-  | DEQ -> true
-  | _ -> false
-;;
-
-let op_to_string (t : token) : string =
-  match t with
-  | OP o -> o
-  | PLUS -> "+"
-  | MINUS -> "-"
-  | DIV -> "/"
-  | MUL -> "*"
-  | AND -> "&&"
-  | OR -> "||"
-  | LT -> "<"
-  | GT -> ">"
-  | LTE -> "<="
-  | GTE -> ">="
-  | CONS -> "::"
-  | NE -> "/="
-  | DEQ -> "=="
-  | _ -> ""
-;;

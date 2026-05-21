@@ -1,4 +1,4 @@
-@module NormalForm
+module NormalForm
 
 dec chooseType : Bool -> Type
 def chooseType true := Int

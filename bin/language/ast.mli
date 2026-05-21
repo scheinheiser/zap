@@ -35,6 +35,7 @@ and expr =
   | RCons of ident * (ident * located_expr) list (* MkRec { x₁ = y₁; ...; xₙ = yₙ } *)
   | RUpdate of
       ident * ident * (ident * located_expr) list (* { x where y₁ = z₁; ...; yₙ = zₙ } *)
+  | Hole (* _ *)
 
 type located_ty_decl = Location.t * ty_decl
 and ty_decl = ident * tdecl_type

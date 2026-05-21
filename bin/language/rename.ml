@@ -1,5 +1,5 @@
 open Primitive
-open Desugar
+open Elab
 
 (* alpha renaming *)
 module AR : sig
@@ -120,6 +120,7 @@ end = struct
     : located_expr * ident VM.t
     =
     match expr with
+    | Hole -> (loc, Hole), env
     | Const (s, Ident i) ->
       let i' = get_str i in
       (match VM.find_opt i' env with

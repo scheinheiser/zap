@@ -264,10 +264,10 @@ let is_type (ctx : ctx) ((loc, e) : Typed_ast.located_expr) : bool Base.Or_error
   | Const _ -> Ok false
 
 (* type inference for expressions *)
-let rec infer (ctx : ctx) ((loc, e) : Desugar.located_expr)
+let rec infer (ctx : ctx) ((loc, e) : Elab.located_expr)
   : (Typed_ast.typed_expr * ctx) Base.Or_error.t
   =
-  let open Desugar in
+  let open Elab in
   match e with
   | Const (l, Ident i) ->
     let i' = get_str_combine i in

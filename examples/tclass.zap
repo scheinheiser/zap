@@ -1,0 +1,82 @@
+module TypeClass
+
+class toInt : (a : Type) with
+  dec toInt : a -> Int
+end
+
+class Add : (a : Type) includes
+  dec ( + ) : a -> a -> a
+end
+
+class Semigroup : (a : Type) includes
+  dec ( <> ) : a -> a -> a
+end
+
+class Monoid : Semigroup (a : Type) => a includes
+  dec mempty : a
+end
+
+% numbers
+union Nat : Type =
+  | Z : Nat
+  | S : Nat -> Nat
+
+dec make : Int -> Nat
+def make n := go n Z
+  with
+    dec go : Int -> Nat -> Nat
+    def go 0 acc := acc
+    def go n acc := go (n - 1) (S acc)
+  end
+
+dec add : Nat -> Nat -> Nat
+def add x Z := x
+def add x (S y) := add (S x) y
+
+instance toInt Nat where
+  dec toInt : Nat -> Int
+  def toInt := make
+end
+
+instance Num Nat where
+  dec ( + ) : Nat -> Nat -> Nat
+  def ( + ) := add
+end
+
+instance Semigroup Nat where
+  dec ( <> ) : Nat -> Nat -> Nat
+  def ( <> ) := add
+end
+
+instance Monoid Nat where
+  dec mempty : Nat
+  def mempty := Z
+end
+
+% lists
+union List : (a : Type) -> Type =
+  | Nil : List a
+  | ( :: ) : a -> List a -> List a
+
+dec append : { a : Type } -> List a -> List a -> List a
+def append l r := go (reverse l []) r
+  with
+    def go [] r := r
+    def go (x :: xs) r := go xs (x :: r)
+
+    def reverse [] acc := acc
+    def reverse (x :: xs) acc := reverse xs (x :: acc)
+  end
+
+instance Semigroup (List a) where
+  dec ( <> ) : {a : Type} -> List a -> List a -> List a
+  def ( <> ) := append
+end
+
+instance Monoid (List a) where
+  dec mempty : List a
+  def mempty := []
+end
+
+dec main : IO Unit
+def main := print "hello world"

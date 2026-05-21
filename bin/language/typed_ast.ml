@@ -54,13 +54,13 @@ let rec show_pat = function
   | _, PConst c -> Format.asprintf "%a" pp_const c
 ;;
 
-let rec convert ((loc, p) : Desugar.located_pattern) : located_pattern =
+let rec convert ((loc, p) : Elab.located_pattern) : located_pattern =
   let p = match p with
-    | Desugar.PWild -> PWild
-    | Desugar.PConst c -> PConst c
-    | Desugar.PBop (l, op, r) -> PBop (convert l, op, convert r)
-    | Desugar.PCtor (i, cs) -> PCtor (i, List.map convert cs)
-    | Desugar.PTuple ps -> PTuple (List.map convert ps)
+    | Elab.PWild -> PWild
+    | Elab.PConst c -> PConst c
+    | Elab.PBop (l, op, r) -> PBop (convert l, op, convert r)
+    | Elab.PCtor (i, cs) -> PCtor (i, List.map convert cs)
+    | Elab.PTuple ps -> PTuple (List.map convert ps)
   in loc, p
 
 (* pretty printing *)

@@ -1,10 +1,10 @@
-@module TypeDeclSyntax
+module TypeDeclSyntax
 
 % a simple alias to give users more context about a type.
-@alias IsWorker := Bool
+alias IsWorker := Bool
 
 % the type signature is declared similarly to let expressions.
-@union Basket : (price: Type) -> Type =
+union Basket : (price: Type) -> Type =
   | Apple    : price -> Basket price % explicit type signature for variants.
   | Banana   : price -> Basket price
   | Bag      : Basket price % empty variant
@@ -12,18 +12,19 @@
 @rassoc 7 :.
 
 % unions can contain only operator constructors.
-@union List : (a: Type) -> Type =
+union List : (a: Type) -> Type =
   | Nil    : List a
   | ( :: ) : a -> List a -> List a
 @rassoc 7 ::
 
 % the constructor is declared before the definition
-@record Person : (price: Type) -> Type = MkPerson
-  { name   : String
-  ; age    : Int
-  ; status : IsWorker
-  ; basket : Basket price
-  }
+record Person : (price: Type) -> Type = 
+  constructor MkPerson
+  name   : String
+  age    : Int
+  status : IsWorker
+  basket : Basket price
+end
 
 dec unsafeHead : (a : Type) -> List a -> a
 def unsafeHead _ (h :: _) := h
@@ -41,4 +42,4 @@ dec personBasketPrice : (a : Type) -> Person a -> a
 def personBasketPrice price p := getPrice price p.basket
 
 dec addItem : (a : Type) -> Person a -> Basket a -> Person a
-def addItem _ p item := MkPerson { p where basket = item :. p.basket }
+def addItem _ p item := MkPerson { p where basket := item :. p.basket }
